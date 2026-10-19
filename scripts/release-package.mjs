@@ -36,7 +36,11 @@ export async function packageRelease(root,tag,output=path.join(root,'release')) 
       await cp(path.join(root,'dist',file),path.join(folder,file));
       await cp(path.join(root,'dist',file),path.join(output,file));
     }
-    await cp(path.join(root,'README.md'),path.join(folder,'README.md'));
+    const repository=normalizeRepository(JSON.parse(await readFile(path.join(root,'update-source.json'),'utf8')).repository);
+    const readme=(await readFile(path.join(root,'README.md'),'utf8'))
+      .replace(/!\[([^\]]*)\]\((docs\/[^)]+)\)/g,(_match,label,file)=>`![${label}](https://raw.githubusercontent.com/${repository}/${tag}/${file})`)
+      .replace(/\[([^\]]*)\]\((docs\/[^)]+|APIMART-SETUP\.md|PUBLISHING\.md)\)/g,(_match,label,file)=>`[${label}](https://github.com/${repository}/blob/${tag}/${file})`);
+    await writeFile(path.join(folder,'README.md'),readme);
     const name='Visual-Board-v'+manifest.version+'-Chanson.zip';
     const target=path.resolve(output,name);
     await rm(target,{force:true});
