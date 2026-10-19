@@ -15,6 +15,8 @@ import { NativeReferenceSync } from './native-reference-sync';
 import { importMarkdownFiles } from './markdown-import';
 import { ComponentClipboardService } from './component-clipboard';
 import { LayoutStorage, validatedBoardData } from './layout-storage';
+import { LayoutSync } from './layout-sync';
+import { mergeLayouts } from './layout-merge';
 import frameHtml from './frame.html';
 import { UpdateService, UpdateResult, normalizeUpdateRepository } from './updates';
 import updateSource from '../update-source.json';
@@ -32,8 +34,27 @@ interface ArticleMoveRecord {
 export default class VisualBoardPlugin extends Plugin {
  explorerRevealDepth=0;layout:Layout=initialLayout(); settings:Settings={...defaults}; vaultBridge!:VaultBridge; icons!:IconService; images!:ImageService; folders!:FolderBridge;media!:MediaService;recycle!:RecycleService; private legacyLinking?:Promise<void>;
  private layoutStorage?:LayoutStorage;private storageBlocked=false;
+ layoutSync=new LayoutSync();
+ layoutStamp(){return this.layoutSync.observe(this.layout,this.nativeSync.revision);}
+ recoveryDirectory(){return normalizePath(this.app.vault.configDir+'/visual-board-layout-backups/'+this.manifest.id+'/conflicts');}
+ async preserveLayoutConflict(proposed:unknown,reason:string,base?:Layout){
+  const valid=validatedBoardData(proposed);if(!valid)throw Error('画板保存数据无效，已保留当前布局。');
+  const adapter=this.app.vault.adapter,dir=this.recoveryDirectory();let path='';for(const part of dir.split('/')){path=path?path+'/'+part:part;if(!await adapter.exists(path)){try{await adapter.mkdir(path);}catch{if(!await adapter.exists(path))throw Error('恢复副本保存失败，请保持画板打开。');}}}
+  const name=Date.now()+'-'+crypto.randomUUID()+'.json',payload={schema:1,createdAt:Date.now(),reason,layout:sanitizeLayout(valid.layout),current:sanitizeLayout(this.layout),...(base?{base}:{} )},text=JSON.stringify(payload);
+  await adapter.write(dir+'/'+name,text);if(await adapter.read(dir+'/'+name)!==text)throw Error('恢复副本校验失败，请保持画板打开。');return name;
+ }
+ async acceptLayoutSave(p:any){
+  this.layoutStamp();const base=this.layoutSync.base(p.layoutSession,p.layoutRevision),valid=validatedBoardData(p.layout||p);
+  if(!valid)throw Error('画板保存数据无效，已保留当前布局。');
+  if(!base){const recovery=await this.preserveLayoutConflict(valid.layout,'expired-session');return {...this.layoutStamp(),saveStatus:'expired',recovery};}
+  const reconcile=()=>{const live=this.layout,original=this.nativeSync.accept(base.layout,base.nativeRevision,live,path=>!!this.app.vault.getAbstractFileByPath(path)),incoming=this.nativeSync.accept(valid.layout,p.nativeRevision,live,path=>!!this.app.vault.getAbstractFileByPath(path));return mergeLayouts(original,incoming,live);};
+  let merged=reconcile(),recovery:string|undefined;if(merged.conflicts.length){recovery=await this.preserveLayoutConflict(valid.layout,'concurrent-edit',base.layout);merged=reconcile();}
+  this.layout=merged.layout;this.syncFolders();await this.persist();await this.flushWrites();return {...this.layoutStamp(),saveStatus:recovery?'conflict':'saved',recovery};
+ }
  private updater?:UpdateService;private updateResult?:UpdateResult;private updateTimer?:ReturnType<typeof setTimeout>;private updatesDisposed=false;private updateGeneration=0;private announcedUpdates=new Set<string>();
- drafts:Record<string,Draft>=Object.create(null); private writes:Promise<void>=Promise.resolve(); private refreshTimer:ReturnType<typeof setTimeout>|undefined;
+ drafts:Record<string,Draft>=Object.create(null); private writes:Promise<void>=Promise.resolve();private requests:Promise<unknown>=Promise.resolve();private unloaded=false;
+ async flushWrites(){while(true){const pending=this.writes;await pending;if(pending===this.writes)return;}}
+ queueLayoutRequest<T>(run:()=>Promise<T>):Promise<T>{const next=this.requests.catch(()=>{}).then(run);this.requests=next;return next;} private refreshTimer:ReturnType<typeof setTimeout>|undefined;
  private clipboard?:ComponentClipboardService;componentMutating=false;private componentIdle:Promise<void>=Promise.resolve();private finishComponent?:()=>void;
  clipboardService(){return this.clipboard ||= new ComponentClipboardService(this.app,{getLayout:()=>this.layout,setLayout:layout=>{this.layout=layout;},persist:()=>this.persist(),revision:()=>this.nativeSync.revision},this.recycle);}
  async componentMutation<T>(operation:()=>Promise<T>):Promise<T>{if(this.componentMutating||this.recycle.active)throw Error('组件正在处理，请稍候。');this.componentMutating=true;this.componentIdle=new Promise(resolve=>{this.finishComponent=resolve;});try{return await operation();}finally{this.componentMutating=false;this.finishComponent?.();this.finishComponent=undefined;}}
@@ -86,11 +107,12 @@ export default class VisualBoardPlugin extends Plugin {
   this.registerEvent(this.app.metadataCache.on('changed',()=>this.scheduleRefresh()));
   void this.vaultReady.then(()=>{if(!this.updatesDisposed)this.scheduleUpdateCheck(8000);});
  }
- onunload(){this.updatesDisposed=true;if(this.updateTimer)clearTimeout(this.updateTimer);this.updater?.dispose();if(this.refreshTimer)clearTimeout(this.refreshTimer);this.articleMoves.clear();this.nativeArticleMoves.clear();}
+ onunload(){this.unloaded=true;this.updatesDisposed=true;if(this.updateTimer)clearTimeout(this.updateTimer);this.updater?.dispose();if(this.refreshTimer)clearTimeout(this.refreshTimer);this.articleMoves.clear();this.nativeArticleMoves.clear();}
  private invalidateArticleMoves(path:string,file?:unknown){for(const record of this.articleMoves.values())if(record.file===file||[record.oldPath,record.newPath].some(p=>p===path||p.startsWith(path+'/')))record.invalid=true;}
  rebindRestoredMoves(paths:string[]){for(const record of this.articleMoves.values()){if(record.invalid)continue;const expected=record.phase==='moved'?record.newPath:record.oldPath;if(paths.some(path=>expected===path||expected.startsWith(path+'/'))){const file=this.app.vault.getAbstractFileByPath(expected);if(file instanceof TFile)record.file=file;}}}
  beginArticleMove(file:TFile,oldPath:string,newPath:string){if(this.nativeArticleMoves.has(file))throw Error('这篇文章正在移动，请稍候。');this.nativeArticleMoves.set(file,{oldPath,newPath});}
  endArticleMove(file:TFile){this.nativeArticleMoves.delete(file);}
+ articleReplayBusy(token:unknown){return typeof token==='string'&&this.articleMoves.get(token)?.busy===true;}
  rememberArticleMove(record:Omit<ArticleMoveRecord,'token'|'phase'|'invalid'|'busy'>){const token=crypto.randomUUID();this.articleMoves.set(token,{...record,token,phase:'moved',invalid:false,busy:false});while(this.articleMoves.size>200)this.articleMoves.delete(this.articleMoves.keys().next().value!);return token;}
  async replayArticleMove(token:unknown,direction:unknown){
   const record=typeof token==='string'?this.articleMoves.get(token):undefined;
@@ -203,7 +225,7 @@ export default class VisualBoardPlugin extends Plugin {
  views():BoardView[]{return this.app.workspace.getLeavesOfType(VIEW).map(l=>l.view).filter((v):v is BoardView=>v instanceof BoardView);}
  async openBoard(){let leaf=this.app.workspace.getLeavesOfType(VIEW)[0];if(!leaf){leaf=this.app.workspace.getLeaf('tab');await leaf.setViewState({type:VIEW,active:true});}await this.app.workspace.revealLeaf(leaf);const view=leaf.view as BoardView;view.send('center-board',{});return view;}
  async addCurrent(file:TFile){const b=this.layout.boards[this.layout.currentBoard];b.nodes.push({id:'card-'+crypto.randomUUID(),type:'article',doc:file.path,...visibleNodePosition(b.nodes.map(n=>({x:n.x,y:n.y,w:n.w||(n.type==='board'?300:480),h:n.h||(n.type==='board'?303:640)})),b.view,{w:1200,h:600},{w:480,h:640})});await this.persist();const view=await this.openBoard();await view.refresh(true);}
- persist():Promise<void>{if(this.storageBlocked)return Promise.reject(Error('画板布局未能安全读取，已停止写入并保留原文件。'));const payload={schema:1,layout:this.layout,settings:this.settings};const serialized=JSON.parse(JSON.stringify(payload));this.writes=this.writes.catch(()=>{}).then(()=>this.layoutStorage?this.layoutStorage.write(serialized).catch(()=>{throw Error('画板布局保存失败，已保留上一次有效布局，请稍后重试。');}):this.saveData(serialized));return this.writes;}
+ persist():Promise<void>{if(this.storageBlocked)return Promise.reject(Error('画板布局未能安全读取，已停止写入并保留原文件。'));this.layoutStamp();const payload={schema:1,layout:this.layout,settings:this.settings};const serialized=JSON.parse(JSON.stringify(payload));this.writes=this.writes.catch(()=>{}).then(()=>this.layoutStorage?this.layoutStorage.write(serialized).catch(async()=>{await this.preserveLayoutConflict(serialized.layout,'write-interrupted');throw Error('画板布局保存失败，已保留恢复副本，请稍后重试。');}):this.saveData(serialized));return this.writes;}
  draftPath(){return `${this.manifest.dir||this.app.vault.configDir+'/plugins/'+this.manifest.id}/draft-recovery.json`;}
  persistDrafts(){const value=JSON.stringify(this.drafts);this.writes=this.writes.catch(()=>{}).then(()=>this.app.vault.adapter.write(this.draftPath(),value));return this.writes;}
  async saveDraft(p:any){const path=safeVaultPath(p.path);if(!path||!path.endsWith('.md')||typeof p.body!=='string'||typeof p.expectedBody!=='string'||p.body.length>20000000)throw Error('草稿内容无效。');const at=Number(p.updatedAt)||Date.now();if(!this.drafts[path]||at>=this.drafts[path].updatedAt){this.drafts[path]={path,body:p.body,expectedBody:p.expectedBody,updatedAt:at};await this.persistDrafts();}}
@@ -217,23 +239,23 @@ export default class VisualBoardPlugin extends Plugin {
   const paths=new Set<string>();for(const b of Object.values(this.layout.boards)){if(b.iconPath)paths.add(b.iconPath);for(const n of b.nodes)if(n.imagePath)paths.add(n.imagePath);}
   const embeds:Record<string,{link:string,path:string}[]>={};
   for(const d of Object.values(docs)){const f=this.app.vault.getAbstractFileByPath(d.path);if(!(f instanceof TFile))continue;embeds[d.path]=[];for(const embed of this.app.metadataCache.getFileCache(f)?.embeds||[]){const target=this.app.metadataCache.getFirstLinkpathDest(embed.link.split('#')[0],d.path);if(target&&/^(png|jpe?g|webp|gif)$/i.test(target.extension)){paths.add(target.path);embeds[d.path].push({link:embed.link,path:target.path});}}}
-  const mediaPaths=Object.values(this.layout.boards).flatMap(b=>b.nodes.flatMap(n=>n.filePath?[n.filePath]:[]));const mediaAssets=await this.media.mediaAssets(mediaPaths);const assets=await this.images.imageAssets([...paths]);return {mediaAssets,layout:this.layout,nativeRevision,folderLayoutChanged,docs,assets,embeds,settings:this.settings,vaultName:this.app.vault.getName(),drafts:Object.values(this.drafts)};
+  const mediaPaths=Object.values(this.layout.boards).flatMap(b=>b.nodes.flatMap(n=>n.filePath?[n.filePath]:[]));const mediaAssets=await this.media.mediaAssets(mediaPaths);const assets=await this.images.imageAssets([...paths]);return {mediaAssets,...this.layoutStamp(),nativeRevision,folderLayoutChanged,docs,assets,embeds,settings:this.settings,vaultName:this.app.vault.getName(),drafts:Object.values(this.drafts)};
  }
 }
 class BoardView extends ItemView {
- private lastLayoutRevision=0;private frame?:HTMLIFrameElement;private channel=crypto.randomUUID();private ready=false;private refreshing=false;private pendingRefresh=false;private pendingIncludeLayout=false;private movingArticles=new Set<string>();private flushDone?:()=>void;
+ private lastLayoutRevision=0;private lastComponentRevision=0;private frame?:HTMLIFrameElement;private channel=crypto.randomUUID();private ready=false;private refreshing=false;private pendingRefresh=false;private pendingIncludeLayout=false;private movingArticles=new Set<string>();private flushDone?:()=>void;private closingLayout?:unknown;
  constructor(leaf:WorkspaceLeaf,private plugin:VisualBoardPlugin){super(leaf);}
  getViewType(){return VIEW;}getDisplayText(){return this.plugin.text('可视化桌面');}
  setLanguage(){this.frame?.setAttribute?.('title',this.plugin.text('可视化桌面'));this.send('language',{language:this.plugin.settings.language});(this.leaf as any).updateHeader?.();}getIcon(){return 'panels-top-left';}
  async onOpen(){this.contentEl.empty();this.contentEl.addClass('visual-board-container');this.frame=this.contentEl.createEl('iframe',{cls:'visual-board-frame',attr:{title:this.plugin.text('可视化桌面'),sandbox:'allow-scripts allow-modals allow-downloads'}});
-  const win=this.contentEl.ownerDocument.defaultView!;const handler=(e:MessageEvent)=>{if(e.source!==this.frame?.contentWindow)return;const data=e.data;if(data?.kind==='vb-boot'){void this.plugin.snapshot().then(payload=>{this.lastLayoutRevision=payload.nativeRevision;this.frame?.contentWindow?.postMessage({kind:'vb-init',channel:this.channel,payload},'*');}).catch(()=>new Notice(this.plugin.text('读取本地文章失败，请重新打开画板。')));return;}
-   if(data?.channel!==this.channel)return;if(data.kind==='vb-ready'){this.ready=true;return;}if(data.kind==='vb-flushed'){this.flushDone?.();return;}if(data.kind==='vb-request'&&typeof data.id==='string'&&typeof data.method==='string')void this.handle(data);
+  const win=this.contentEl.ownerDocument.defaultView!;const handler=(e:MessageEvent)=>{if(e.source!==this.frame?.contentWindow)return;const data=e.data;if(data?.kind==='vb-boot'){void this.plugin.snapshot().then(payload=>{this.lastLayoutRevision=payload.nativeRevision;this.lastComponentRevision=payload.layoutRevision;this.frame?.contentWindow?.postMessage({kind:'vb-init',channel:this.channel,payload},'*');}).catch(()=>new Notice(this.plugin.text('读取本地文章失败，请重新打开画板。')));return;}
+   if(data?.channel!==this.channel)return;if(data.kind==='vb-ready'){this.ready=true;return;}if(data.kind==='vb-closing-layout'){this.closingLayout=data.payload;return;}if(data.kind==='vb-flushed'){this.flushDone?.();return;}if(data.kind==='vb-request'&&typeof data.id==='string'&&typeof data.method==='string')void this.handle(data);
   };win.addEventListener('message',handler);this.register(()=>win.removeEventListener('message',handler));this.frame.srcdoc=frameHtml;
  }
- send(type:string,payload:unknown){this.frame?.contentWindow?.postMessage({kind:'vb-event',channel:this.channel,type,payload},'*');}
+ send(type:string,payload:any){if(payload?.layout)payload={...payload,...this.plugin.layoutStamp()};this.frame?.contentWindow?.postMessage({kind:'vb-event',channel:this.channel,type,payload},'*');}
  private notifyOtherRecycleViews(snapshot:Awaited<ReturnType<VisualBoardPlugin['snapshot']>>){for(const view of this.plugin.views())if(view!==this)view.send('snapshot',{...snapshot,layout:this.plugin.layout,preserveView:true});}
- async refresh(includeLayout=false){if(!this.ready)return;if(this.refreshing){this.pendingRefresh=true;this.pendingIncludeLayout||=includeLayout;return;}this.refreshing=true;try{let snapshot=await this.plugin.snapshot();while(snapshot.nativeRevision!==this.plugin.nativeSync.revision)snapshot=await this.plugin.snapshot();const sendLayout=includeLayout||snapshot.folderLayoutChanged||snapshot.nativeRevision!==this.lastLayoutRevision;this.send('snapshot',{...snapshot,layout:sendLayout?snapshot.layout:undefined,preserveView:!includeLayout});if(sendLayout)this.lastLayoutRevision=snapshot.nativeRevision;}catch{this.send('notice',this.plugin.text('本地文章暂时无法刷新，请稍后再试。'));}finally{this.refreshing=false;if(this.pendingRefresh){this.pendingRefresh=false;const nextLayout=this.pendingIncludeLayout;this.pendingIncludeLayout=false;void this.refresh(nextLayout);}}}
- async onClose(){if(this.ready)await new Promise<void>(resolve=>{const timer=setTimeout(resolve,4000);this.flushDone=()=>{clearTimeout(timer);resolve();};this.send('flush',{});});await this.plugin.persist();this.ready=false;this.frame=undefined;}
+ async refresh(includeLayout=false){if(!this.ready)return;if(this.refreshing){this.pendingRefresh=true;this.pendingIncludeLayout||=includeLayout;return;}this.refreshing=true;try{let snapshot=await this.plugin.snapshot();while(snapshot.nativeRevision!==this.plugin.nativeSync.revision)snapshot=await this.plugin.snapshot();const sendLayout=includeLayout||snapshot.folderLayoutChanged||snapshot.nativeRevision!==this.lastLayoutRevision||snapshot.layoutRevision!==this.lastComponentRevision;this.send('snapshot',{...snapshot,layout:sendLayout?snapshot.layout:undefined,preserveView:!includeLayout});if(sendLayout){this.lastLayoutRevision=snapshot.nativeRevision;this.lastComponentRevision=snapshot.layoutRevision;}}catch{this.send('notice',this.plugin.text('本地文章暂时无法刷新，请稍后再试。'));}finally{this.refreshing=false;if(this.pendingRefresh){this.pendingRefresh=false;const nextLayout=this.pendingIncludeLayout;this.pendingIncludeLayout=false;void this.refresh(nextLayout);}}}
+ async onClose(){let flushed=!this.ready;if(this.ready)await new Promise<void>(resolve=>{const timer=setTimeout(resolve,10000);this.flushDone=()=>{flushed=true;clearTimeout(timer);resolve();};this.send('flush',{});});if(!flushed&&this.closingLayout)await this.plugin.preserveLayoutConflict(this.closingLayout,'close-timeout');await this.plugin.queueLayoutRequest(async()=>{await this.plugin.flushWrites();await this.plugin.persist();});this.ready=false;this.frame=undefined;}
  private async moveArticle(p:any){
     const source=this.plugin.layout.boards[p.sourceBoard],target=this.plugin.layout.boards[p.targetBoard],node=source?.nodes.find(n=>n.id===p.node);
     if(!node||node.type!=='article'||!node.doc||target?.folderPath===undefined||target.folderMissing||source.id===target.id)throw Error('请选择文章和有效的目标文件夹。');
@@ -252,7 +274,15 @@ class BoardView extends ItemView {
     }finally{this.movingArticles.delete(oldPath);this.plugin.endArticleMove(file);}
  }
  private async handle(data:{id:string,method:string,payload:any}){
-  const reply=(result:any,error?:string)=>this.frame?.contentWindow?.postMessage({kind:'vb-response',channel:this.channel,id:data.id,result:result?.layout?{...result,nativeRevision:this.plugin.nativeSync.revision}:result,error},'*');
+  // Busy mutations must fail immediately: callers can be waiting for this
+  // refusal before allowing the active native operation to finish. Snapshots
+  // already wait/retry through componentIdle and nativeRevision themselves.
+  if(this.plugin.componentMutating||this.plugin.recycle.active||data.method==='replay-article-move'&&this.plugin.articleReplayBusy(data.payload?.token))return this.handleRequest(data);
+  if(['save-layout','trash-components','restore-components','redo-trash','create-note','create-folder','rename-folder','move-folder','move-article','drop-markdown','paste-components','import-markdown','replay-component-insertion','replay-article-move'].includes(data.method))return this.plugin.queueLayoutRequest(()=>this.handleRequest(data));
+  return this.handleRequest(data);
+ }
+ private async handleRequest(data:{id:string,method:string,payload:any}){
+  const reply=(result:any,error?:string)=>this.frame?.contentWindow?.postMessage({kind:'vb-response',channel:this.channel,id:data.id,result:result?.layout?{...result,...(result.layoutRevision?{}:this.plugin.layoutStamp()),nativeRevision:this.plugin.nativeSync.revision}:result,error},'*');
   try{const p=data.payload||{};if(this.plugin.componentMutating&&['save-layout','create-note','create-folder','rename-folder','move-folder','move-article','drop-markdown','paste-components','import-markdown','replay-component-insertion','replay-article-move','rename-note','update-note','trash-components','restore-components','redo-trash'].includes(data.method))throw Error('组件正在处理，请稍候。');if(this.plugin.recycle.active&&['save-layout','create-note','create-folder','rename-folder','move-folder','move-article','replay-article-move','rename-note','update-note','import-media','import-image','generate-icon','paste-components','import-markdown','drop-markdown','replay-component-insertion'].includes(data.method))throw Error('回收站正在处理文件，请稍候再修改。');switch(data.method){
    case 'update-info':reply(this.plugin.updateInfo());break;
    case 'check-update':reply(await this.plugin.checkForUpdates(true));break;
@@ -261,7 +291,10 @@ class BoardView extends ItemView {
    case 'open-update':{const url=this.plugin.updateUrl(p.kind);this.contentEl.ownerDocument.defaultView?.open(url,'_blank','noopener,noreferrer');reply({ok:true});break;}
    case 'save-draft':await this.plugin.saveDraft(p);reply({ok:true});break;
    case 'clear-draft':await this.plugin.clearDraft(p);reply({ok:true});break;
-   case 'save-layout':if(this.plugin.recycle.active)throw Error('文件正在回收或恢复，请稍后保存布局。');this.plugin.layout=this.plugin.nativeSync.accept(p.layout||p,p.nativeRevision,this.plugin.layout,path=>!!this.plugin.app.vault.getAbstractFileByPath(path));this.plugin.syncFolders();await this.plugin.persist();reply({ok:true});break;
+   case 'save-layout':{if(this.plugin.recycle.active)throw Error('文件正在回收或恢复，请稍后保存布局。');const result=await this.plugin.acceptLayoutSave(p);reply(result);for(const view of this.plugin.views())if(view!==this)view.send('layout',{...this.plugin.layoutStamp(),nativeRevision:this.plugin.nativeSync.revision,preserveView:true});break;}
+   case 'preserve-layout-conflict':reply({recovery:await this.plugin.preserveLayoutConflict(p.layout,'pending-local-edit')});break;
+   case 'list-layout-conflicts':{const dir=this.plugin.recoveryDirectory();reply(await this.plugin.app.vault.adapter.exists(dir)?(await this.plugin.app.vault.adapter.list(dir)).files.filter(path=>/\/\d+-[0-9a-f-]{36}\.json$/.test(path)).map(path=>path.split('/').pop()).sort().reverse():[]);break;}
+   case 'read-layout-conflict':{if(typeof p.name!=='string'||!/^\d+-[0-9a-f-]{36}\.json$/.test(p.name))throw Error('恢复记录无效。');reply(JSON.parse(await this.plugin.app.vault.adapter.read(this.plugin.recoveryDirectory()+'/'+p.name)));break;}
    case 'trash-components':{const result=await this.plugin.recycle.trash(String(p.board||''),Array.isArray(p.ids)?p.ids:[]),snapshot=await this.plugin.snapshot();reply({...result,layout:this.plugin.layout,docs:snapshot.docs,assets:snapshot.assets,mediaAssets:snapshot.mediaAssets});this.notifyOtherRecycleViews(snapshot);this.plugin.scheduleRefresh();break;}
    case 'restore-components':{const result=await this.plugin.recycle.restore(String(p.token||''));this.plugin.rebindRestoredMoves(result.restoredPaths||[]);const snapshot=await this.plugin.snapshot();reply({...result,layout:this.plugin.layout,docs:snapshot.docs,assets:snapshot.assets,mediaAssets:snapshot.mediaAssets});this.notifyOtherRecycleViews(snapshot);this.plugin.scheduleRefresh();break;}
    case 'redo-trash':{const result=await this.plugin.recycle.redo(String(p.token||'')),snapshot=await this.plugin.snapshot();reply({...result,layout:this.plugin.layout,docs:snapshot.docs,assets:snapshot.assets,mediaAssets:snapshot.mediaAssets});this.notifyOtherRecycleViews(snapshot);this.plugin.scheduleRefresh();break;}

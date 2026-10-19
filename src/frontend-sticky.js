@@ -22,9 +22,12 @@
   n[field]=value;const k=key(b,id),d=drafts.get(k)||{board:b,id,values:{}};d.values[field]=value;drafts.set(k,d);schedule();return true;
  }
  function merge(layout,ack=false){for(const[k,d]of drafts){const n=layout.boards[d.board]?.nodes.find(n=>n.id===d.id&&n.type==='note');if(!n){if(ack)drafts.delete(k);continue;}if(ack&&Object.entries(d.values).every(([f,v])=>(n[f]||'')===v)){drafts.delete(k);continue;}Object.assign(n,d.values);}}
- const baseAccept=VBHost.acceptLayout;VBHost.acceptLayout=function(layout,preserveView){
-  const active=document.activeElement?.closest?.('.vb-sticky-editor');if(active?.__vbStickyTouched){const b=active.dataset.stickyBoard,id=active.dataset.stickyNode,field=active.dataset.stickyField,n=layout.boards[b]?.nodes.find(n=>n.id===id&&n.type==='note');if(n){const d=drafts.get(key(b,id))||{board:b,id,values:{}};d.values[field]=plain(active);drafts.set(key(b,id),d);}}
-  merge(layout,true);return baseAccept(layout,preserveView);
+ const baseAccept=VBHost.acceptLayout;VBHost.acceptLayout=async function(...args){
+  const active=document.activeElement?.closest?.('.vb-sticky-editor');
+  if(active?.__vbStickyTouched)write(active.dataset.stickyBoard,active.dataset.stickyNode,active.dataset.stickyField,plain(active));
+  const accepted=await baseAccept(...args);
+  if(accepted!==false){drafts.clear();if(active)active.__vbStickyTouched=false;}
+  return accepted;
  };
  const baseSave=save;save=function(){clearTimeout(timer);merge(state);return baseSave();};
  async function flush(){clearTimeout(timer);return save();}

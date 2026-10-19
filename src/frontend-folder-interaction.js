@@ -49,7 +49,7 @@
     const result=await rpc('move-article',{sourceBoard,node:id,targetBoard:dest});
     if(result.oldPath!==result.newPath)window.VBHost.applyRenameReferences({oldPath:result.oldPath,newPath:result.newPath,folder:false,doc:result.doc});
     else if(result.doc)state.docs[result.doc.path]=result.doc;
-    state.docs=VBInline.acceptDocs(state.docs);window.VBHost.acceptLayout(result.layout,true);
+    state.docs=VBInline.acceptDocs(state.docs);await window.VBHost.acceptLayout(result.layout,true);
     if(state.currentBoard===sourceBoard&&selected===id)selected=null;
     window.VBHistory?.recordArticleMove(result);window.VBHistory?.focusGesture();
     render();reveal(result.newPath);toast(result.warning||'文章已移入「'+target.title+'」');

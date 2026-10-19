@@ -1,78 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { build } from 'esbuild';
-import { runInNewContext } from 'node:vm';
-import { webcrypto } from 'node:crypto';
+import { plain, primary, dir, arrangement, diskFixture, lifecycle } from './layout-host-harness.mjs';
 
-// Real main.ts lifecycle and RPCs, backed only by an isolated in-memory Vault adapter.
-const compiled = await build({ entryPoints: [new URL('../src/main.ts', import.meta.url).pathname], bundle: true, format: 'cjs', platform: 'node', external: ['obsidian'], loader: { '.html': 'text' }, write: false });
-const source = compiled.outputFiles[0].text, plain = value => JSON.parse(JSON.stringify(value));
-const dir = '.obsidian/plugins/obsidian-visual-board', primary = dir + '/data.json';
-const body = '# Test title\r\n\r\nOriginal **Markdown** and [[Other]] remain unchanged.\r\n';
-const board = (id, folderPath, parent, nodes) => ({ id, title: id === 'research' ? 'Research' : id === 'nested' ? 'Sub' : id, folderPath, folderMissing: false, parent, theme: 'research', iconMode: 'default', iconStatus: 'default', view: { x: -420, y: 760, zoom: .6 }, nodes, edges: [] });
-function arrangement() {
-  const home = board('home', '', null, [{ id: 'research-entry', type: 'board', board: 'research', x: 1840, y: -720, w: 340, h: 360, folderManaged: true }]);
-  const research = board('research', 'Research', 'home', [
-    { id: 'audio', type: 'audio', filePath: 'Research/Song.mp3', title: 'Song', x: 900, y: -180, w: 480, h: 180 },
-    { id: 'article-b', type: 'article', doc: 'Research/B.md', x: -900, y: -760, w: 520, h: 380, folderManaged: true },
-    { id: 'sticky', type: 'note', title: 'Keep', text: 'Stacking and colors', x: 340, y: 700, w: 380, h: 280, color: 'pink', angle: -3 },
-    { id: 'nested-entry', type: 'board', board: 'nested', x: -600, y: 840, w: 300, h: 303, folderManaged: true },
-    { id: 'article-a', type: 'article', doc: 'Research/A.md', x: 640, y: -820, w: 820, h: 440, folderManaged: true },
-    { id: 'photo', type: 'photo', imagePath: 'Research/Picture.png', imageWidth: 800, imageHeight: 400, title: 'Picture', x: -1400, y: 460, w: 400, h: 200 },
-    { id: 'pdf', type: 'pdf', filePath: 'Research/Paper.pdf', title: 'Paper', x: 1500, y: 540, w: 580, h: 720 },
-  ]);
-  research.edges = [{ from: 'article-a', to: 'sticky', lineStyle: 'dashed', width: 3 }, { from: 'photo', to: 'audio', width: 4 }];
-  research.knowledgeEdgeStyles = [{ from: 'article-b', to: 'article-a', lineStyle: 'dashed', width: 5, hidden: true }];
-  research.iconId = 'leaf'; research.folderColor = 'rose'; research.hiddenFolderDocs = ['Research/Hidden.md'];
-  const nested = board('nested', 'Research/Sub', 'research', [{ id: 'nested-article', type: 'article', doc: 'Research/Sub/C.md', x: 1960, y: -1420, w: 620, h: 520, folderManaged: true }]);
-  return { version: 2, articleSizingVersion: 1, currentBoard: 'research', showKnowledge: true, showSpace: false, boards: { home, research, nested }, audioPlayback: { 'Research/Song.mp3': { position: 42, duration: 120, lastPlayedAt: 1000 } }, visibleArticleHeadings: ['Research/A.md'] };
-}
-function diskFixture() {
-  const files = new Map([[primary, JSON.stringify({ schema: 1, layout: arrangement(), settings: { language: 'zh', legacyFolderLinked: true, attachmentFolder: 'Assets', defaultIconMode: 'default' } })]]);
-  for (const path of ['Research/A.md', 'Research/B.md', 'Research/Sub/C.md', 'Research/Hidden.md']) files.set(path, body);
-  files.set('Research/Picture.png', 'image fixture'); files.set('Research/Song.mp3', 'audio fixture'); files.set('Research/Paper.pdf', '%PDF-1.7');
-  return { files, directories: new Set(['', '.obsidian', '.obsidian/plugins', dir, 'Research', 'Research/Sub']), operations: [], articleWrites: [], loadCalls: 0, saveCalls: 0 };
-}
-async function lifecycle(disk, { markdownIndex = ['Research/A.md', 'Research/B.md', 'Research/Sub/C.md', 'Research/Hidden.md'], unindexedPaths = [] } = {}) {
-  const indexed = new Map(), handlers = new Map(), notices = [], messages = [];
-  const on = (type, fn) => { if (!handlers.has(type)) handlers.set(type, []); handlers.get(type).push(fn); return { type, fn }; };
-  class TFile { constructor(path) { this.path = path; this.name = path.split('/').pop(); this.basename = this.name.replace(/\.[^.]+$/, ''); this.extension = this.name.split('.').pop(); this.stat = { size: disk.files.get(path)?.length || 0, mtime: 100, ctime: 100 }; } }
-  for (const path of disk.directories) if (!path.startsWith('.')) indexed.set(path, { path, name: path.split('/').pop(), children: [] });
-  for (const path of disk.files.keys()) if (!path.startsWith('.') && !unindexedPaths.includes(path)) indexed.set(path, new TFile(path));
-  const adapter = {
-    exists: async path => disk.files.has(path) || disk.directories.has(path),
-    read: async path => { if (!disk.files.has(path)) throw Error('Missing file: ' + path); return disk.files.get(path); },
-    write: async (path, text) => { disk.operations.push(['write', path]); if (!path.startsWith('.')) disk.articleWrites.push(path); disk.files.set(path, text); },
-    readBinary: async path => { if (!disk.files.has(path)) throw Error('Missing attachment'); return new TextEncoder().encode(disk.files.get(path)).buffer; },
-    rename: async (from, to) => { if (!disk.files.has(from)) throw Error('Missing rename source'); if (disk.files.has(to)) throw Error('Destination exists'); disk.operations.push(['rename', from, to]); disk.files.set(to, disk.files.get(from)); disk.files.delete(from); },
-    remove: async path => { disk.operations.push(['remove', path]); if (!disk.files.delete(path)) throw Error('Missing removal path'); },
-    mkdir: async path => { disk.operations.push(['mkdir', path]); if (disk.directories.has(path)) throw Error('Directory exists'); disk.directories.add(path); },
-    getResourcePath: path => 'app://isolated/' + path,
-  };
-  let factory;
-  const leaves = [], app = {
-    vault: { adapter, configDir: '.obsidian', on, getName: () => 'Isolated Layout Vault', getAbstractFileByPath: path => indexed.get(path) || null, getAllLoadedFiles: () => [...indexed.values()], getRoot: () => indexed.get(''), getMarkdownFiles: () => markdownIndex.map(path => indexed.get(path)).filter(Boolean), cachedRead: async file => disk.files.get(file.path), read: async file => disk.files.get(file.path), getResourcePath: file => adapter.getResourcePath(file.path) },
-    metadataCache: { on, resolvedLinks: {}, getFileCache: () => ({ embeds: [] }), getFirstLinkpathDest: () => null },
-    workspace: { on, onLayoutReady: callback => callback(), getLeavesOfType: type => type === 'visual-board-desktop' ? leaves : [], getActiveFile: () => null },
-  };
-  class Plugin {
-    constructor(app, manifest) { this.app = app; this.manifest = manifest; }
-    async loadData() { disk.loadCalls++; return disk.files.has(primary) ? JSON.parse(disk.files.get(primary)) : null; }
-    async saveData(value) { disk.saveCalls++; disk.operations.push(['legacy-save', primary]); disk.files.set(primary, JSON.stringify(value)); }
-    registerView(_type, fn) { factory = fn; } registerEvent() {} registerObsidianProtocolHandler() {} addRibbonIcon() {} addCommand() {} addSettingTab() {}
-  }
-  class ItemView { constructor(leaf) { this.leaf = leaf; } }
-  const obsidian = { Plugin, ItemView, WorkspaceLeaf: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, Notice: class { constructor(message) { notices.push(message); } }, normalizePath: value => value, requestUrl: async () => { throw Error('Unexpected network access'); } };
-  const module = { exports: {} };
-  runInNewContext(source, { module, exports: module.exports, require: name => { assert.equal(name, 'obsidian'); return obsidian; }, console, setTimeout, clearTimeout, TextEncoder, TextDecoder, URL, crypto: webcrypto, Uint8Array, btoa: value => Buffer.from(value, 'binary').toString('base64') });
-  const plugin = new module.exports.default(app, { id: 'obsidian-visual-board', dir });
-  let failure;
-  try { await plugin.onload(); } catch (error) { failure = error; }
-  let view;
-  if (!failure) { const leaf = {}; view = factory(leaf); leaf.view = view; leaves.push(leaf); view.frame = { contentWindow: { postMessage: value => messages.push(plain(value)) } }; }
-  let sequence = 0;
-  return { plugin, failure, notices, app, setIndex: paths => { markdownIndex = paths; }, async rpc(method, payload) { assert.ok(view); const id = 'test-' + ++sequence; await view.handle({ id, method, payload }); const response = messages.find(value => value.kind === 'vb-response' && value.id === id); assert.ok(response); assert.equal(response.error, undefined, response.error); return response.result; }, close() { plugin.onunload(); } };
-}
+function savePayload(snapshot, layout = snapshot.layout) { return { layout, layoutRevision: snapshot.layoutRevision, layoutSession: snapshot.layoutSession, nativeRevision: snapshot.nativeRevision }; }
+const researchNode = (layout, id) => layout.boards.research.nodes.find(node => node.id === id);
+const recoveries = disk => [...disk.files].filter(([path]) => /\/conflicts\/.*\.json$/.test(path)).map(([path, data]) => ({ path, ...JSON.parse(data) }));
 
 test('actual main preserves every arranged component across incomplete index, layout save and cold plugin reopen', async () => {
   const disk = diskFixture(), initialFiles = new Map([...disk.files].filter(([path]) => !path.startsWith('.'))), f = await lifecycle(disk, { markdownIndex: [], unindexedPaths: ['Research/B.md'] });
@@ -83,7 +15,7 @@ test('actual main preserves every arranged component across incomplete index, la
     for (const paths of [[], ['Research/A.md'], []]) {
       f.setIndex(paths); const snapshot = await f.rpc('snapshot', {});
       assert.deepEqual(snapshot.layout, before, 'empty/partial Markdown index must preserve all stored geometry');
-      await f.rpc('save-layout', { layout: snapshot.layout, nativeRevision: snapshot.nativeRevision });
+      await f.rpc('save-layout', savePayload(snapshot));
       assert.deepEqual(JSON.parse(disk.files.get(primary)).layout, before);
     }
     f.setIndex(['Research/A.md', 'Research/B.md', 'Research/Sub/C.md', 'Research/Hidden.md']);
@@ -104,9 +36,9 @@ test('actual main recovers corrupt primary from newest verified backup in its te
   let expected;
   try {
     for (let step = 1; step <= 14; step++) {
-      const previous = plain(f.plugin.layout), next = plain(previous);
+      const snapshot = await f.rpc('snapshot', {}), previous = plain(snapshot.layout), next = plain(previous);
       next.boards.research.nodes.find(node => node.id === 'sticky').x = 1000 + step * 20;
-      await f.rpc('save-layout', { layout: next, nativeRevision: f.plugin.nativeSync.revision });
+      await f.rpc('save-layout', savePayload(snapshot, next));
       expected = previous;
     }
   } finally { f.close(); }
@@ -124,7 +56,7 @@ test('actual main recovers corrupt primary from newest verified backup in its te
     assert.equal(disk.files.get(primary), corrupt, 'opening recovered data does not overwrite corrupt original until explicit save');
     assert.equal(disk.operations.length, operationsBefore);
     const snapshot = await reopened.rpc('snapshot', {}); assert.deepEqual(snapshot.layout, expected);
-    await reopened.rpc('save-layout', { layout: snapshot.layout, nativeRevision: snapshot.nativeRevision });
+    await reopened.rpc('save-layout', savePayload(snapshot));
     assert.deepEqual(JSON.parse(disk.files.get(primary)).layout, expected);
   } finally { reopened.close(); }
 });
@@ -160,9 +92,9 @@ test('actual settings save and cold reopen preserve layout and original Markdown
 test('replacing the entire plugin directory restores the latest exact layout from backups outside the install folder', async () => {
   const disk = diskFixture(), f = await lifecycle(disk); let expected, settings;
   try {
-    const next = plain(f.plugin.layout); next.boards.research.nodes.find(n=>n.id==='sticky').x=2460;
+    const snapshot = await f.rpc('snapshot', {}), next = plain(snapshot.layout); next.boards.research.nodes.find(n=>n.id==='sticky').x=2460;
     next.boards.research.view={x:380,y:-620,zoom:1.4}; next.audioPlayback['Research/Song.mp3'].position=81;
-    await f.rpc('save-layout',{layout:next,nativeRevision:f.plugin.nativeSync.revision});
+    await f.rpc('save-layout',savePayload(snapshot, next));
     await f.rpc('save-settings',{language:'en'});
     const saved=JSON.parse(disk.files.get(primary));expected=saved.layout;settings=saved.settings;
   }finally{f.close();}
@@ -176,7 +108,160 @@ test('replacing the entire plugin directory restores the latest exact layout fro
     assert.deepEqual(plain(reopened.plugin.settings),settings);assert.ok(reopened.notices.some(message=>/备份.*恢复|recovered/.test(message)));
     assert.equal(disk.files.has(primary),false,'recovery does not overwrite before an explicit save');
     const snapshot=await reopened.rpc('snapshot',{});assert.deepEqual(snapshot.layout,expected);
-    await reopened.rpc('save-layout',{layout:snapshot.layout,nativeRevision:snapshot.nativeRevision});
+    await reopened.rpc('save-layout',savePayload(snapshot));
     assert.deepEqual(JSON.parse(disk.files.get(primary)).layout,expected);assert.deepEqual(disk.articleWrites,[]);
   }finally{reopened.close();}
+});
+
+test('two actual host views merge stale camera/color saves without losing a new sticky or article arrangement', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk), peer = host.createFrame();
+  try {
+    const first = await host.rpc('snapshot', {}), second = await peer.rpc('snapshot', {});
+    assert.equal(first.layoutRevision, second.layoutRevision); assert.equal(first.layoutSession, second.layoutSession);
+    const edited = plain(first.layout);
+    edited.boards.research.nodes.push({ id: 'fresh-sticky', type: 'note', title: 'New sticky', text: 'Must survive old snapshots', color: 'purple', x: 720, y: 1000, w: 460, h: 380 });
+    Object.assign(researchNode(edited, 'article-a'), { x: -1880, y: 1240, w: 640, h: 820 });
+    const saved = await host.rpc('save-layout', savePayload(first, edited));
+    assert.equal(saved.saveStatus, 'saved');
+    const stale = plain(second.layout);
+    stale.boards.research.view = { x: 200, y: -500, zoom: .9 }; researchNode(stale, 'sticky').color = 'blue';
+    const merged = await peer.rpc('save-layout', savePayload(second, stale));
+    assert.equal(merged.saveStatus, 'saved');
+    assert.deepEqual(researchNode(merged.layout, 'fresh-sticky'), researchNode(edited, 'fresh-sticky'));
+    assert.deepEqual(researchNode(merged.layout, 'article-a'), researchNode(edited, 'article-a'));
+    assert.equal(researchNode(merged.layout, 'sticky').color, 'blue');
+    assert.deepEqual(merged.layout.boards.research.view, stale.boards.research.view);
+    assert.deepEqual(JSON.parse(disk.files.get(primary)).layout, merged.layout);
+    assert.equal(recoveries(disk).length, 0);
+  } finally { host.close(); }
+});
+
+test('a late full save after restored sticky insertion retains all recovered content and arrangement on cold reopen', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk); let expected;
+  try {
+    const stale = await host.rpc('snapshot', {}), preserved = plain(stale.layout.boards.research.nodes);
+    // This is the host-side result of a recycle/backup restore, not a frame edit.
+    for (let i = 0; i < 14; i++) host.plugin.layout.boards.research.nodes.push({ id: `recovered-${i}`, type: 'note', title: `Recovered ${i}`, text: `Recovered body ${i}\nSecond line`, color: i % 2 ? 'pink' : 'green', x: i * 320, y: 1600, w: 300, h: 420 });
+    await host.plugin.persist(); await host.plugin.flushWrites();
+    const response = await host.rpc('save-layout', savePayload(stale));
+    assert.equal(response.saveStatus, 'saved');
+    assert.equal(response.layout.boards.research.nodes.filter(node => node.type === 'note').length, 15);
+    assert.deepEqual(response.layout.boards.research.nodes.filter(node => !node.id.startsWith('recovered-')), preserved);
+    expected = response.layout;
+  } finally { host.close(); }
+  const reopened = await lifecycle(disk);
+  try {
+    const snapshot = await reopened.rpc('snapshot', {});
+    assert.deepEqual(snapshot.layout, expected);
+    assert.deepEqual(JSON.parse(disk.files.get(primary)).layout, expected);
+  } finally { reopened.close(); }
+});
+
+test('concurrent sticky text keeps the already saved edit and persists the losing complete draft outside the plugin directory', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk), peer = host.createFrame();
+  try {
+    const first = await host.rpc('snapshot', {}), second = await peer.rpc('snapshot', {});
+    const latest = plain(first.layout), draft = plain(second.layout);
+    researchNode(latest, 'sticky').text = 'Window A saved\nFull latest text';
+    researchNode(draft, 'sticky').text = 'Window B unsaved\nEntire second draft';
+    const saved = await host.rpc('save-layout', savePayload(first, latest)); assert.equal(saved.saveStatus, 'saved');
+    const response = await peer.rpc('save-layout', savePayload(second, draft));
+    assert.equal(response.saveStatus, 'conflict'); assert.ok(response.recovery);
+    assert.equal(researchNode(response.layout, 'sticky').text, researchNode(latest, 'sticky').text);
+    const copies = recoveries(disk); assert.equal(copies.length, 1);
+    assert.equal(copies[0].reason, 'concurrent-edit');
+    assert.equal(copies[0].path.startsWith(dir + '/'), false);
+    assert.deepEqual(copies[0].layout, draft); assert.deepEqual(copies[0].base, second.layout);
+    assert.equal(researchNode(copies[0].current, 'sticky').text, researchNode(latest, 'sticky').text);
+    assert.deepEqual(JSON.parse(disk.files.get(primary)).layout, response.layout);
+    const listed = await host.rpc('list-layout-conflicts', {}); assert.ok(listed.includes(response.recovery));
+  } finally { host.close(); }
+});
+
+test('a snapshot from an earlier plugin session is archived and cannot overwrite cold-reopened data', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk); let oldSnapshot, expected;
+  try {
+    oldSnapshot = await host.rpc('snapshot', {});
+    const edited = plain(oldSnapshot.layout); researchNode(edited, 'sticky').text = 'Persist before restarting';
+    researchNode(edited, 'article-a').x = 2280;
+    expected = (await host.rpc('save-layout', savePayload(oldSnapshot, edited))).layout;
+  } finally { host.close(); }
+  const reopened = await lifecycle(disk);
+  try {
+    const fresh = await reopened.rpc('snapshot', {}); assert.notEqual(fresh.layoutSession, oldSnapshot.layoutSession);
+    const outdated = plain(oldSnapshot.layout); researchNode(outdated, 'sticky').text = 'Old window last-minute draft';
+    const response = await reopened.rpc('save-layout', savePayload(oldSnapshot, outdated));
+    assert.equal(response.saveStatus, 'expired'); assert.deepEqual(response.layout, expected);
+    assert.deepEqual(JSON.parse(disk.files.get(primary)).layout, expected);
+    const copies = recoveries(disk); assert.equal(copies.length, 1); assert.equal(copies[0].reason, 'expired-session');
+    assert.deepEqual(copies[0].layout, outdated);
+  } finally { reopened.close(); }
+});
+
+test('two simultaneous RPC saves serialize, retain both nonconflicting changes and survive reopening', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk), peer = host.createFrame(); let expected;
+  try {
+    const first = await host.rpc('snapshot', {}), second = await peer.rpc('snapshot', {});
+    const left = plain(first.layout), right = plain(second.layout);
+    researchNode(left, 'sticky').text = 'Both simultaneous saves kept';
+    researchNode(right, 'article-a').x = -2220;
+    const responses = await Promise.all([host.rpc('save-layout', savePayload(first, left)), peer.rpc('save-layout', savePayload(second, right))]);
+    assert.ok(responses.every(response => response.saveStatus === 'saved'));
+    expected = JSON.parse(disk.files.get(primary)).layout;
+    assert.equal(researchNode(expected, 'sticky').text, 'Both simultaneous saves kept');
+    assert.equal(researchNode(expected, 'article-a').x, -2220);
+  } finally { host.close(); }
+  const reopened = await lifecycle(disk);
+  try { assert.deepEqual((await reopened.rpc('snapshot', {})).layout, expected); } finally { reopened.close(); }
+});
+
+test('a native file rename remains authoritative when an older frame saves geometry and sticky edits', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk), peer = host.createFrame();
+  try {
+    const old = await peer.rpc('snapshot', {});
+    await host.nativeRename('Research/A.md', 'Research/Renamed.md');
+    const stale = plain(old.layout); researchNode(stale, 'article-a').x = 2660; researchNode(stale, 'sticky').text = 'Keep editing after rename';
+    const response = await peer.rpc('save-layout', savePayload(old, stale));
+    assert.equal(response.saveStatus, 'saved');
+    assert.equal(researchNode(response.layout, 'article-a').doc, 'Research/Renamed.md');
+    assert.equal(researchNode(response.layout, 'article-a').x, 2660);
+    assert.equal(researchNode(response.layout, 'sticky').text, 'Keep editing after rename');
+    assert.equal(disk.files.has('Research/A.md'), false);
+    assert.ok(disk.files.has('Research/Renamed.md'));
+    assert.deepEqual(JSON.parse(disk.files.get(primary)).layout, response.layout);
+    assert.deepEqual(disk.articleWrites, []);
+  } finally { host.close(); }
+});
+
+test('legacy unstamped full save and evicted baselines preserve current data and retain recoverable submissions', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk);
+  try {
+    const oldest = await host.rpc('snapshot', {});
+    for (let index = 0; index < 66; index++) {
+      const snapshot = await host.rpc('snapshot', {}), next = plain(snapshot.layout);
+      researchNode(next, 'article-a').x = index * 20;
+      assert.equal((await host.rpc('save-layout', savePayload(snapshot, next))).saveStatus, 'saved');
+    }
+    const before = plain(host.plugin.layout), diskBefore = disk.files.get(primary);
+    const expired = await host.rpc('save-layout', savePayload(oldest)); assert.equal(expired.saveStatus, 'expired');
+    const legacy = await host.rpc('save-layout', { layout: oldest.layout, nativeRevision: oldest.nativeRevision }); assert.equal(legacy.saveStatus, 'expired');
+    assert.deepEqual(plain(host.plugin.layout), before); assert.equal(disk.files.get(primary), diskBefore);
+    const copies = recoveries(disk); assert.equal(copies.length, 2);
+    assert.ok(copies.every(copy => copy.reason === 'expired-session'));
+    assert.ok(copies.every(copy => JSON.stringify(copy.layout) === JSON.stringify(oldest.layout)));
+  } finally { host.close(); }
+});
+
+test('conflicting save fails safely when its recovery copy cannot be written', async () => {
+  const disk = diskFixture(), host = await lifecycle(disk);
+  try {
+    const old = await host.rpc('snapshot', {}), first = plain(old.layout), late = plain(old.layout);
+    researchNode(first, 'sticky').text = 'First saved edit'; researchNode(late, 'sticky').text = 'Late text still in frame';
+    await host.rpc('save-layout', savePayload(old, first));
+    const before = plain(host.plugin.layout), diskBefore = disk.files.get(primary), write = host.app.vault.adapter.write;
+    host.app.vault.adapter.write = async (path, text) => { if (path.includes('/conflicts/')) throw Error('Recovery storage full'); return write(path, text); };
+    await assert.rejects(host.rpc('save-layout', savePayload(old, late)), /操作失败|Recovery storage full/);
+    assert.deepEqual(plain(host.plugin.layout), before); assert.equal(disk.files.get(primary), diskBefore);
+    assert.equal(recoveries(disk).length, 0);
+  } finally { host.close(); }
 });

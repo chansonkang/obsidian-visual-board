@@ -41,13 +41,13 @@
  }
  const baseSave=save;save=function(){return busy?Promise.resolve():baseSave();};
  function focusGesture(){const canvas=$('canvas');canvas.tabIndex=-1;canvas.style.outline='none';canvas.focus({preventScroll:true});}
- function applyResult(result){
+ async function applyResult(result){
   if(typeof result.oldPath==='string'&&typeof result.newPath==='string'&&result.oldPath!==result.newPath)VBHost.applyRenameReferences({oldPath:result.oldPath,newPath:result.newPath,folder:false,doc:result.doc});
   else if(result.doc)state.docs[result.doc.path]=result.doc;
   const incoming=result.docs||state.docs;state.docs=window.VBInline?VBInline.acceptDocs(incoming):incoming;
   for(const [path,url]of Object.entries(result.assets||{}))VBHost.registerAsset(path,url);
   if(result.mediaAssets&&window.VBMedia)Object.assign(VBMedia.assets,result.mediaAssets);
-  VBHost.acceptLayout(result.layout,true);
+  await VBHost.acceptLayout(result.layout,true);
   if(selected&&!board().nodes.some(n=>n.id===selected))selected=null;
   window.VBMultiSelection?.clear();window.VBEdgeStyle?.clear();$('preview').innerHTML='';render();focusGesture();
   const restoredPath=result.restoredPaths?.find(path=>typeof path==='string'&&path);if(restoredPath)void VBHost.rpc('reveal-entry',{path:restoredPath}).catch(e=>toast(e.message));
@@ -87,7 +87,7 @@
     if(window.VBInline&&!(await VBInline.flushAll()))throw Error('请先处理文章保存冲突，再撤销组件操作。');
     await baseSave();replaying=true;
     const result=command.kind==='insertion'?await VBHost.rpc('replay-component-insertion',{token:command.token,direction:redo?'redo':'undo'}):command.kind==='trash'?await VBHost.rpc((redo?command.restored:!command.restored)?'restore-components':'redo-trash',{token:command.token}):await VBHost.rpc('replay-article-move',{token:command.token,direction:redo?'redo':'undo'});
-    applyResult(result);list[key].pop();command.undone=++sequence;list[other].push(command);return true;
+    await applyResult(result);list[key].pop();command.undone=++sequence;list[other].push(command);return true;
    }catch(e){toast(e.message);return false;}finally{replaying=false;busy=false;document.body.classList.remove('vb-moving-article');}
   }
   return false;
@@ -99,7 +99,7 @@
    if(window.VBMedia)await VBMedia.flushPlayback();
    if(window.VBInline&&!(await VBInline.flushAll()))throw Error('请先处理文章草稿保存提示。');
    await baseSave();replaying=true;
-   const result=await VBHost.rpc(method,payload);applyResult(result);
+   const result=await VBHost.rpc(method,payload);await applyResult(result);
    if(typeof result.undoToken==='string'){moves.past.push({kind:'insertion',token:result.undoToken,order:newAction()});if(moves.past.length>200)moves.past.shift();}
    for(const token of result.moveTokens||[])moves.past.push({kind:'article-move',token,order:newAction()});
    for(const change of result.geometryChanges||[]){const h=history(change.board);h.past.push({kind:'geometry',changes:[{id:change.id,before:change.before,after:change.after}],order:newAction()});if(h.past.length>LIMIT)h.past.shift();}
@@ -114,7 +114,7 @@
  }
  window.VBHistory={capture,recordGeometry,recordGeometryBatch,recordArticleMove,recordReferenceMove,recordPhotoChange,nativeAction,undo:()=>apply(),redo:()=>apply(true),
   beginGesture(){gesturing=true;},endGesture(){gesturing=false;},focusGesture,
-  get replaying(){return busy;},
+  get gesturing(){return gesturing;},get replaying(){return busy;},
   get counts(){const h=history(board().id);return {undo:h.past.length+moves.past.length,redo:h.future.length+moves.future.length};},
  };
  window.addEventListener('pointerdown',e=>{if(busy&&e.target.closest?.('#nodes>.node,#multiselect-panel,#connection-controls')){e.preventDefault();e.stopImmediatePropagation();}},true);

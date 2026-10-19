@@ -407,7 +407,7 @@ test('recycle success broadcasts current layout to other open views with camera 
 test('native file-list delete clears every reference immediately, retains recovery drafts, and publishes a camera-preserving layout snapshot', async () => {
   const f=await fixture();
   try {
-    const original=plain(f.plugin.layout),file=f.files.get('Source/Note.md');
+    const stamp=f.plugin.layoutStamp(),original=plain(stamp.layout),file=f.files.get('Source/Note.md');
     f.plugin.drafts[file.path]={path:file.path,body:'unsaved fixture',expectedBody:originalBody,updatedAt:10};
     f.files.delete(file.path);f.bodies.delete(file.path);f.emit('delete',file);
     for(const b of Object.values(f.plugin.layout.boards))assert.equal(b.nodes.some(n=>n.doc==='Source/Note.md'),false);
@@ -418,7 +418,7 @@ test('native file-list delete clears every reference immediately, retains recove
     f.view.ready=true;await f.view.refresh();
     const snapshot=f.messages.filter(m=>m.type==='snapshot').at(-1).payload;
     assert.equal(snapshot.nativeRevision,1);assert.ok(snapshot.layout);assert.equal(snapshot.preserveView,true);
-    const saved=await f.rpc('save-layout',{...original,nativeRevision:0});assert.equal(saved.error,undefined);
+    const saved=await f.rpc('save-layout',{...original,layoutSession:stamp.layoutSession,layoutRevision:stamp.layoutRevision,nativeRevision:0});assert.equal(saved.error,undefined);
     assert.equal(Object.values(f.plugin.layout.boards).some(b=>b.nodes.some(n=>n.doc==='Source/Note.md')),false);
     assert.deepEqual(f.articleWrites,[]);
   }finally{f.plugin.onunload();}
@@ -426,12 +426,12 @@ test('native file-list delete clears every reference immediately, retains recove
 test('native file rename survives a queued old layout save and migrates recovery drafts to the new exact path', async () => {
   const f=await fixture();
   try {
-    const stale=plain(f.plugin.layout),oldPath='Source/Note.md',newPath='Source/Renamed.md';
+    const stamp=f.plugin.layoutStamp(),stale=plain(stamp.layout),oldPath='Source/Note.md',newPath='Source/Renamed.md';
     f.plugin.drafts[oldPath]={path:oldPath,body:'unsaved rename fixture',expectedBody:originalBody,updatedAt:10};
     await f.app.fileManager.renameFile(f.files.get(oldPath),newPath);
     assert.equal(f.plugin.drafts[newPath].body,'unsaved rename fixture');assert.equal(f.plugin.drafts[oldPath],undefined);
     const event=f.messages.find(m=>m.type==='rename');assert.equal(event.payload.nativeRevision,1);
-    await f.rpc('save-layout',{...stale,nativeRevision:0});
+    const saved=await f.rpc('save-layout',{...stale,layoutSession:stamp.layoutSession,layoutRevision:stamp.layoutRevision,nativeRevision:0});assert.equal(saved.error,undefined);
     assert.equal(f.plugin.layout.boards.free.nodes[0].doc,newPath);
     assert.equal(f.plugin.layout.boards.source.nodes.find(n=>n.id==='selected-reference').doc,newPath);
     assert.deepEqual(plain(f.plugin.layout.boards.free.view),stale.boards.free.view);

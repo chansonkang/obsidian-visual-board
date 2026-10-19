@@ -43,6 +43,22 @@ export function validatedBoardData(raw: unknown): StoredBoardData | null {
 }
 
 interface Backup { storageVersion: 1; sequence: number; savedAt: number; payload: StoredBoardData }
+interface SharedStorageQueue { owner: object; chain: Promise<void> }
+// The Vault adapter survives plugin module reloads. Keep ownership and transaction
+// order there rather than in module-local variables or a particular plugin instance.
+const STORAGE_QUEUES = Symbol.for('obsidian-visual-board.layout-storage.queues.v1');
+function storageQueue(adapter: Adapter, dir: string, owner: object): SharedStorageQueue {
+  const host = adapter as Adapter & { [STORAGE_QUEUES]?: Map<string, SharedStorageQueue> };
+  let queues = host[STORAGE_QUEUES];
+  if (!queues) {
+    queues = new Map();
+    Object.defineProperty(host, STORAGE_QUEUES, { value: queues });
+  }
+  let queue = queues.get(dir);
+  if (!queue) { queue = { owner, chain: Promise.resolve() }; queues.set(dir, queue); }
+  else queue.owner = owner;
+  return queue;
+}
 /** Browsing and playback still save to primary, but must not evict arrangement history. */
 function arrangementSignature(layout: RecordValue): string {
   const { currentBoard: _current, audioPlayback: _audio, showKnowledge: _knowledge, showSpace: _space, ...arrangement } = layout;
@@ -58,7 +74,9 @@ export class LayoutStorage {
   private blocked = false;
   private known: StoredBoardData | null = null;
   private sequence = 0;
-  private chain: Promise<void> = Promise.resolve();
+  private loading = false;
+  private readonly owner = {};
+  private shared: SharedStorageQueue;
   readonly primary: string;
   private backupDir: string;
   private mirrorPath?: string;
@@ -68,6 +86,10 @@ export class LayoutStorage {
     this.primary = `${dir}/data.json`;
     this.backupDir = backupDir ?? dir;
     if (backupDir !== undefined) this.mirrorPath = `${backupDir}/layout-latest.json`;
+    this.shared = storageQueue(adapter, dir, this.owner);
+  }
+  private assertOwner() {
+    if (this.shared.owner !== this.owner) throw Error('Layout storage belongs to a newer plugin instance; stale writes have been stopped.');
   }
   private slot(index: number, dir = this.backupDir) { return `${dir}/layout-backup-${String(index).padStart(2, '0')}.json`; }
   private async ensureDirectory(path: string) {
@@ -81,7 +103,20 @@ export class LayoutStorage {
     return validatedBoardData(JSON.parse(await this.adapter.read(path)));
   }
   async load(fallbackLoadData?: () => Promise<unknown>): Promise<LayoutLoadResult> {
-    if (this.loaded) throw Error('Layout storage has already been loaded.');
+    if (this.loaded || this.loading) throw Error('Layout storage has already been loaded.');
+    this.assertOwner(); this.loading = true;
+    // Complete an already-started old transaction before reading. Queued old
+    // transactions will fail their ownership check without touching disk.
+    const result = this.shared.chain.catch(() => {}).then(async () => {
+      this.assertOwner();
+      const loaded = await this.loadCurrent(fallbackLoadData);
+      this.assertOwner();
+      return loaded;
+    });
+    this.shared.chain = result.then(() => {}, () => {});
+    try { return await result; } finally { this.loading = false; }
+  }
+  private async loadCurrent(fallbackLoadData?: () => Promise<unknown>): Promise<LayoutLoadResult> {
     let data: StoredBoardData | null = null, primaryExists = false, trouble = false;
     try { primaryExists = await this.adapter.exists(this.primary); if (primaryExists) { data = await this.readValid(this.primary); if (!data) trouble = true; } } catch { trouble = true; }
     const backups: { data: StoredBoardData; path: string; sequence: number }[] = [];
@@ -121,9 +156,16 @@ export class LayoutStorage {
     const data = validatedBoardData(payload);
     if (!this.loaded || this.blocked) return Promise.reject(Error('Layout storage is unavailable; existing files have been preserved.'));
     if (!data) return Promise.reject(Error('Invalid Board layout; existing files have been preserved.'));
+    if (this.shared.owner !== this.owner) return Promise.reject(Error('Layout storage belongs to a newer plugin instance; stale writes have been stopped.'));
     const serialized = JSON.stringify(data);
-    this.chain = this.chain.catch(() => {}).then(() => this.commit(serialized));
-    return this.chain;
+    const result = this.shared.chain.catch(() => {}).then(() => {
+      this.assertOwner();
+      // Ownership is checked once per transaction, never between its atomic
+      // replacement steps: a new instance waits for this commit to finish.
+      return this.commit(serialized);
+    });
+    this.shared.chain = result;
+    return result;
   }
   private async commit(serialized: string) {
     const next = JSON.parse(serialized) as StoredBoardData;

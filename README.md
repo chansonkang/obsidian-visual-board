@@ -60,7 +60,7 @@ Visual Board 为 Obsidian 增加一张可编排的桌面：把相关内容放在
 
 ## 三步开始
 
-当前版本 **0.1.27**，支持 **Obsidian 1.5.0+ 桌面版**。
+当前版本 **0.1.28**，支持 **Obsidian 1.5.0+ 桌面版**。
 
 1. 从 [GitHub Releases](https://github.com/chansonkang/obsidian-visual-board/releases) 下载 `Visual-Board-v版本-Chanson.zip`，解压到知识库的 `.obsidian/plugins/`，得到 `obsidian-visual-board` 文件夹。
 2. 在 Obsidian「设置 → 第三方插件」启用 **Visual Board · 可视化桌面**。
@@ -85,7 +85,7 @@ Visual Board 为 Obsidian 增加一张可编排的桌面：把相关内容放在
 
 「下载新版」会打开浏览器下载，不在插件内自动替换或执行代码。手动更新时先退出 Obsidian，只覆盖运行文件，**保留 `data.json`、`draft-recovery.json`、`data.json.previous` 和布局备份，不删除整个插件目录**。重开后可在画板设置确认实际运行版本。还在使用 0.1.25 或更早版本的朋友，需要先手动升级一次，才会获得更新入口；后续下载安装也可由 BRAT 管理。
 
-组件的位置、尺寸、颜色、顺序、连线与音频进度保存到本地。正常重开延续已保存的布局，并提供最近有效快照与 10 份滚动排版备份，默认位于 `.obsidian/visual-board-layout-backups/obsidian-visual-board/`。从备份恢复可能回到较早的成功保存状态；没有备份的旧坐标无法凭空找回。
+组件的位置、尺寸、颜色、顺序、连线与音频进度保存到本地。0.1.28 修复旧窗口覆盖新布局、保存期间输入回退和重载后迟到写入的问题。多窗口冲突会保留独立恢复副本，可从画板设置「保存冲突记录」下载；副本位于下述备份目录内的 `conflicts/`，不随滚动备份淘汰。正常重开延续已保存的布局，并提供最近有效快照与 10 份滚动排版备份，默认位于 `.obsidian/visual-board-layout-backups/obsidian-visual-board/`。从备份恢复可能回到较早的成功保存状态；没有备份的旧坐标无法凭空找回。
 
 ## 你的文章，继续留在本地
 

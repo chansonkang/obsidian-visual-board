@@ -1,6 +1,14 @@
 /* Localize application chrome only. Never walk note Markdown or user-generated titles. */
 (() => {
  const english={
+ "画板保存数据无效，已保留当前布局。":"Invalid Board save data. The current layout has been preserved.",
+ "恢复副本保存失败，请保持画板打开。":"Could not save the recovery copy. Keep the Board open.",
+ "恢复副本校验失败，请保持画板打开。":"Could not verify the recovery copy. Keep the Board open.",
+ "画板布局保存失败，已保留恢复副本，请稍后重试。":"Could not save the Board layout. A recovery copy was preserved; please retry.",
+ "恢复记录无效。":"Invalid recovery record.",
+ "已保留并发修改副本，可在画板设置中查看。":"A copy of concurrent edits was preserved. Find it in Board settings.",
+ "已保留未完成保存的恢复副本。":"A recovery copy of unfinished saves was preserved.",
+
  "画板布局未能安全读取，已停止写入并保留原文件。":"The Board layout could not be read safely. Saving has stopped and the existing files have been preserved.",
  "画板布局未能安全读取，已停止写入并保留原文件，请检查本地布局备份。":"The Board layout could not be read safely. Saving has stopped; the existing files and local backups have been preserved.",
  "已从本地备份恢复画板布局，原组件位置已保留。":"The Board layout was recovered from a local backup, preserving its component positions.",

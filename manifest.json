@@ -1,7 +1,7 @@
 {
   "id": "obsidian-visual-board",
   "name": "Visual Board · 可视化桌面",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "minAppVersion": "1.5.0",
   "description": "以玻璃文件夹和嵌套画板整理本地文章，支持双向链接、网格吸附、自由拉伸和主题图标。",
   "author": "Chanson",

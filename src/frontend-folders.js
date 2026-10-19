@@ -15,7 +15,7 @@
  openBoardDialog=function(id=null){baseDialog(id);const b=id?state.boards[id]:mappedParent();if(!$('new-board-title'))return;
   const intro=document.querySelector('.board-intro');if(intro&&b.folderPath!==undefined)intro.textContent=id?'名称与本地文件夹同步，图标可单独设置。':'在「'+(b.folderPath||'知识库根目录')+'」创建或关联文件夹，入口放在当前视野附近。';
  };
- function acceptMutation(result){if(result.layout)window.VBHost.acceptLayout(result.layout,true);}
+ async function acceptMutation(result){if(result.layout)await window.VBHost.acceptLayout(result.layout,true);}
  const baseCreate=createBoard;let creating=false;
  createBoard=async function(){
   const parent=mappedParent(),target=renameTarget&&state.boards[renameTarget];
@@ -30,7 +30,7 @@
   try{
    if(!(await VBInline.flushAll()))throw Error('请先处理文章草稿保存提示。');await save();
    const result=await rpc(target?'rename-folder':'create-folder',target?{board:target.id,title}:{parentBoard:parent.id,title,position});
-   acceptMutation(result);const sub=state.boards[result.boardId];if(!sub)throw Error('文件夹已保存，请刷新画板目录。');
+   await acceptMutation(result);const sub=state.boards[result.boardId];if(!sub)throw Error('文件夹已保存，请刷新画板目录。');
    Object.assign(sub,config);if(!keepExisting){delete sub.iconUrl;delete sub.iconPath;sub.iconStatus='default';}
    if(cached){sub.iconUrl=cached.url;sub.iconStatus='generated';sub.iconModel=cached.model;}
    const generate=config.iconMode==='ai'&&!cached&&!keepExisting;if(generate)sub.iconStatus='generating';
@@ -43,7 +43,7 @@
  const baseMoveNode=moveNode;let moving=false;
  async function moveMappedBoard(b,dest){
   if(moving)return;moving=true;const camera={...board().view};
-  try{if(!(await VBInline.flushAll()))throw Error('请先处理文章草稿保存提示。');await save();const result=await rpc('move-folder',{board:b.id,targetBoard:dest});acceptMutation(result);board().view=camera;selected=null;await save();render();toast('本地文件夹与画板层级已同步');}
+  try{if(!(await VBInline.flushAll()))throw Error('请先处理文章草稿保存提示。');await save();const result=await rpc('move-folder',{board:b.id,targetBoard:dest});await acceptMutation(result);board().view=camera;selected=null;await save();render();toast('本地文件夹与画板层级已同步');}
   catch(e){toast(e.message);}finally{moving=false;}
  }
  moveNode=function(n,dest){const b=n?.board&&state.boards[n.board];if(b?.folderPath!==undefined){void moveMappedBoard(b,dest);return false;}return baseMoveNode(n,dest);};
@@ -60,7 +60,7 @@
  action=function(a){
   if(a==='confirm-move'){
    const n=node(),b=n?.board&&state.boards[n.board];if(b?.folderPath!==undefined){const dest=$('move-target')?.value;if(!dest)return;
-    const view={...board().view};void VBInline.flushAll().then(async ok=>{if(!ok)throw Error('请先处理文章草稿保存提示。');await save();const result=await rpc('move-folder',{board:b.id,targetBoard:dest});acceptMutation(result);board().view=view;selected=null;closeModal(true);await save();render();toast('本地文件夹与画板层级已同步');}).catch(e=>toast(e.message));return;
+    const view={...board().view};void VBInline.flushAll().then(async ok=>{if(!ok)throw Error('请先处理文章草稿保存提示。');await save();const result=await rpc('move-folder',{board:b.id,targetBoard:dest});await acceptMutation(result);board().view=view;selected=null;closeModal(true);await save();render();toast('本地文件夹与画板层级已同步');}).catch(e=>toast(e.message));return;
    }
   }
   if(a==='arrange-board'){arrange();return;}

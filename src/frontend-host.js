@@ -30,8 +30,41 @@
   render();void save();
  }
  window.VBHost.applyRenameReferences=applyRenameReferences;
- let saveChain=Promise.resolve();
- save=function(){for(const b of Object.values(state.boards)){if(b.iconUrl&&iconPaths.has(b.iconUrl))b.iconPath=iconPaths.get(b.iconUrl);if(b.iconMode==='default')delete b.iconPath;}const snapshot=clone(state);snapshot.nativeRevision=VBHost.nativeRevision;delete snapshot.docs;for(const b of Object.values(snapshot.boards))delete b.iconUrl;saveChain=saveChain.catch(()=>{}).then(()=>rpc('save-layout',snapshot)).catch(e=>toast('画板保存失败：'+e.message));return saveChain;};
+ let saveChain=Promise.resolve(),acceptChain=Promise.resolve(),saving=false,deferredLayouts=[];
+ const layoutMetadata=new WeakMap();let acknowledged=clone(window.__VB_INIT.layout),layoutRevision=window.__VB_INIT.layoutRevision,layoutSession=window.__VB_INIT.layoutSession;
+ function cleanLayout(source=state){const value=clone(source);delete value.docs;delete value.imageService;delete value.nativeRevision;delete value.layoutRevision;delete value.layoutSession;for(const b of Object.values(value.boards)){if(b.iconUrl&&iconPaths.has(b.iconUrl))b.iconPath=iconPaths.get(b.iconUrl);if(b.iconMode==='default')delete b.iconPath;delete b.iconUrl;}return value;}
+ function rememberLayout(result){if(result?.layout)layoutMetadata.set(result.layout,{revision:result.layoutRevision,session:result.layoutSession});}
+ async function applyIncoming(layout,preserveView=true,options={}){
+  const stamp=layoutMetadata.get(layout)||{};
+  if(stamp.session===layoutSession&&Number.isFinite(stamp.revision)&&stamp.revision<layoutRevision)return false;
+  const incoming=cleanLayout(layout),base=options.sent||acknowledged;let archived='';
+  while(window.VBHistory?.gesturing||window.VBMultiSelection?.dragging||window.VBConnections?.dragging)await new Promise(resolve=>requestAnimationFrame(resolve));
+  while(true){
+   const local=cleanLayout(),merged=VBLayoutMerge.mergeLayouts(base,local,incoming),signature=JSON.stringify(local);
+   if((merged.conflicts.length||options.expired)&&signature!==archived){await rpc('preserve-layout-conflict',{layout:local});archived=signature;continue;}
+   const next=options.expired?clone(incoming):merged.layout,previous=state,current=previous.currentBoard;
+   if(preserveView){for(const b of Object.values(next.boards))if(previous.boards[b.id])b.view={...previous.boards[b.id].view};if(next.boards[current])next.currentBoard=current;}
+   acknowledged=clone(incoming);if(Number.isFinite(stamp.revision))layoutRevision=stamp.revision;if(stamp.session)layoutSession=stamp.session;
+   if(JSON.stringify(cleanLayout())!==JSON.stringify(next)){
+    state={...next,docs:previous.docs,imageService:previous.imageService};
+    for(const b of Object.values(state.boards))if(b.iconPath&&assets[b.iconPath]){b.iconUrl=assets[b.iconPath];iconPaths.set(b.iconUrl,b.iconPath);}
+   }
+   if(archived||options.conflict)toast('已保留并发修改副本，可在画板设置中查看。');
+   return true;
+  }
+ }
+ save=function(){
+  const task=saveChain.catch(()=>{}).then(async()=>{
+   await acceptChain;const snapshot=cleanLayout();saving=true;
+   try{
+    const result=await rpc('save-layout',{...snapshot,nativeRevision:VBHost.nativeRevision,layoutRevision,layoutSession});
+    if(result?.layout){rememberLayout(result);await VBHost.acceptLayout(result.layout,true,{sent:snapshot,expired:result.saveStatus==='expired',conflict:result.saveStatus==='conflict',ack:true});render();}
+    else acknowledged=clone(snapshot);
+   }finally{saving=false;const queued=deferredLayouts;deferredLayouts=[];for(const pending of queued)VBHost.acceptLayout(...pending.args).then(pending.resolve,pending.reject);}
+  });
+  saveChain=task;task.catch(e=>toast('画板保存失败：'+e.message));return task;
+ };
+ window.VBHost.flushLayout=async()=>{while(true){const pending=saveChain;await pending;await acceptChain;if(pending===saveChain)return;}};
  fit=function(){sceneScale=Math.min(1,Math.max(.75,innerWidth/1536));$('scene').style.width=innerWidth/sceneScale+'px';$('scene').style.height=innerHeight/sceneScale+'px';$('scene').style.transform=`scale(${sceneScale})`;$('scene').style.left='0';$('scene').style.top='0';};
  renderEdges=function(){const b=board(),out=[];const draw=(a,z,kind)=>{if(!a||!z)return;const aw=a.w||(a.type==='board'?300:200),zw=z.w||(z.type==='board'?300:200),right=z.x>=a.x,x1=a.x+(right?aw:0),y1=a.y+(a.h||240)/2,x2=z.x+(right?0:zw),y2=z.y+(z.h||240)/2;out.push(`<path class="edge ${kind}" d="M${x1},${y1} C${x1+80},${y1} ${x2-80},${y2} ${x2},${y2}"/>`);};if(state.showSpace)b.edges.forEach(e=>draw(b.nodes.find(n=>n.id===e.from),b.nodes.find(n=>n.id===e.to),'space'));if(state.showKnowledge){const seen=new Set();for(const a of b.nodes.filter(n=>n.doc))for(const target of state.docs[a.doc]?.outgoing||[])for(const z of b.nodes.filter(n=>n.doc===target)){const key=[a.id,z.id].sort().join(':');if(a.id!==z.id&&!seen.has(key)){seen.add(key);draw(a,z,'knowledge');}}}$('edges').innerHTML=out.join('');};
  // Render the sticker border as real vector strokes, avoiding offset-shadow fringes.
@@ -61,11 +94,10 @@
   applyView();void save();
  }
  window.VBHost.centerBoardContents=centerBoardContents;
- window.VBHost.acceptLayout=(layout,preserveView=true)=>{
-  const previous=state,current=previous.currentBoard;
-  state={...layout,docs:previous.docs,imageService:previous.imageService};
-  if(preserveView){for(const b of Object.values(state.boards))if(previous.boards[b.id])b.view={...previous.boards[b.id].view};if(state.boards[current])state.currentBoard=current;}
-  for(const b of Object.values(state.boards))if(b.iconPath&&assets[b.iconPath]){b.iconUrl=assets[b.iconPath];iconPaths.set(b.iconUrl,b.iconPath);}
+ window.VBHost.acceptLayout=(layout,preserveView=true,options={})=>{
+  if(saving&&!options.ack)return new Promise((resolve,reject)=>deferredLayouts.push({args:[layout,preserveView,options],resolve,reject}));
+  if(options.ack)return applyIncoming(layout,preserveView,options);
+  const task=acceptChain.catch(()=>{}).then(()=>applyIncoming(layout,preserveView,options));acceptChain=task;task.catch(e=>toast('画板同步失败：'+e.message));return task;
  };
  const baseNavigate=navigate;navigate=function(id){if(!state.boards[id]||!closeModal())return;baseNavigate(id);centerBoardContents();};
  const baseSearchHit=searchV3OpenHit;searchV3OpenHit=function(el){baseSearchHit(el);if(el.dataset.searchPlace===state.currentBoard&&selected===el.dataset.searchNode)centerBoardContents(selected,true);};
@@ -151,7 +183,7 @@
  document.addEventListener('click',e=>{const el=e.target.closest('[data-copy-node],[data-copy-path],[data-native-open],[data-import-image],[data-fit-article],[data-replace-image],[data-native-reveal-path]');if(!el)return;e.preventDefault();e.stopImmediatePropagation();if(el.dataset.nativeRevealPath){void revealArticle(el.dataset.nativeRevealPath).then(()=>toast('已在文件列表中定位：'+el.dataset.nativeRevealPath)).catch(error=>toast('文件列表定位失败：'+error.message+'；文章路径：'+el.dataset.nativeRevealPath));return;}if(el.dataset.replaceImage){selected=el.dataset.replaceImage;imageDialog(selected);return;}if(el.dataset.fitArticle){const n=board().nodes.find(n=>n.id===el.dataset.fitArticle);if(n){Object.assign(n,VBArticleSizing.articleCardSize(state.docs[n.doc]));render();save();toast('已按文章长度适配，全文可在卡片内滚动');}return;}if(el.hasAttribute('data-import-image')){el.disabled=true;importImage($('image-file').files[0],$('image-url').value.trim()).catch(error=>{el.disabled=false;toast(error.message);});return;}if(el.dataset.nativeOpen){rpc('open-note',{path:el.dataset.nativeOpen,line:el.dataset.nativeLine?Number(el.dataset.nativeLine):undefined}).catch(e=>toast(e.message));return;}let data={path:el.dataset.copyPath};if(el.dataset.copyNode){const n=board().nodes.find(n=>n.id===el.dataset.copyNode);data={path:n?.doc||n?.imagePath,sourceUrl:n?.sourceUrl,board:n?.board};}rpc('copy-link',data).then(()=>toast('链接已复制')).catch(e=>toast(e.message));},true);
  window.addEventListener('pointerdown',e=>{if(e.target.closest?.('[data-replace-image]'))e.stopImmediatePropagation();},true);
  document.addEventListener('paste',e=>{const image=[...e.clipboardData?.files||[]].find(f=>f.type.startsWith('image/'));if(!image)return;e.preventDefault();e.stopImmediatePropagation();const inline=e.target.closest('.vb-inline-editor');if(inline){selected=inline.closest('[data-node]').dataset.node;window.VBInline?.captureImageInsertion(inline);}imageDialog();const checkbox=$('image-into-article');if(checkbox)checkbox.checked=!!inline;importImage(image).catch(error=>toast(error.message));},true);
- window.addEventListener('message',async e=>{if(e.source!==parent||e.data?.channel!==channel)return;const data=e.data;if(data.kind==='vb-response'){const task=pending.get(data.id);if(task){clearTimeout(task.timer);pending.delete(data.id);if(!data.error&&data.result?.layout&&Number.isFinite(data.result.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.result.nativeRevision);data.error?task.reject(Error(window.VBI18n?.t(data.error)||data.error)):task.resolve(data.result);}return;}if(data.kind!=='vb-event')return;if(data.type==='notice'){toast(data.payload);return;}if(data.type==='center-board'){centerBoardContents();return;}if(data.type==='snapshot'){if(Number(data.payload.nativeRevision)<VBHost.nativeRevision)return;if(Number.isFinite(data.payload.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.payload.nativeRevision);if(window.VBFolderInteraction?.moving)return;const p=data.payload;state.docs=window.VBInline?VBInline.acceptDocs(p.docs):p.docs;assets={...(p.assets||{})};for(const [path,pin]of pendingImages){if(assets[path]||Date.now()>pin.until)pendingImages.delete(path);else assets[path]=pin.url;}embeds=p.embeds;hostSettings=p.settings;if(p.layout)window.VBHost.acceptLayout(p.layout,!!p.preserveView);for(const b of Object.values(state.boards))if(b.iconPath&&assets[b.iconPath]){b.iconUrl=assets[b.iconPath];iconPaths.set(b.iconUrl,b.iconPath);}render();if(p.layout&&!p.preserveView)centerBoardContents();return;}if(data.type==='rename'){if(Number(data.payload.nativeRevision)<VBHost.nativeRevision)return;if(Number.isFinite(data.payload.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.payload.nativeRevision);applyRenameReferences(data.payload);if(!window.VBFolderInteraction?.moving){render();save();}return;}if(data.type==='delete'){if(Number(data.payload.nativeRevision)<VBHost.nativeRevision)return;if(Number.isFinite(data.payload.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.payload.nativeRevision);applyNativeDelete(data.payload);return;}if(data.type==='flush'){await window.VBMedia?.flushPlayback();await window.VBInline?.flushAll();await saveChain;parent.postMessage({kind:'vb-flushed',channel},'*');}});
+ window.addEventListener('message',async e=>{if(e.source!==parent||e.data?.channel!==channel)return;const data=e.data;if(data.kind==='vb-response'){const task=pending.get(data.id);if(task){clearTimeout(task.timer);pending.delete(data.id);if(!data.error)rememberLayout(data.result);if(!data.error&&data.result?.layout&&Number.isFinite(data.result.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.result.nativeRevision);data.error?task.reject(Error(window.VBI18n?.t(data.error)||data.error)):task.resolve(data.result);}return;}if(data.kind!=='vb-event')return;if(data.type==='notice'){toast(data.payload);return;}if(data.type==='center-board'){centerBoardContents();return;}if(data.type==='layout'){rememberLayout(data.payload);await VBHost.acceptLayout(data.payload.layout,true);render();return;}if(data.type==='snapshot'){if(Number(data.payload.nativeRevision)<VBHost.nativeRevision)return;if(Number.isFinite(data.payload.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.payload.nativeRevision);if(window.VBFolderInteraction?.moving)return;const p=data.payload;state.docs=window.VBInline?VBInline.acceptDocs(p.docs):p.docs;assets={...(p.assets||{})};for(const [path,pin]of pendingImages){if(assets[path]||Date.now()>pin.until)pendingImages.delete(path);else assets[path]=pin.url;}embeds=p.embeds;hostSettings=p.settings;if(p.layout){rememberLayout(p);await window.VBHost.acceptLayout(p.layout,!!p.preserveView);}for(const b of Object.values(state.boards))if(b.iconPath&&assets[b.iconPath]){b.iconUrl=assets[b.iconPath];iconPaths.set(b.iconUrl,b.iconPath);}render();if(p.layout&&!p.preserveView)centerBoardContents();return;}if(data.type==='rename'){if(Number(data.payload.nativeRevision)<VBHost.nativeRevision)return;if(Number.isFinite(data.payload.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.payload.nativeRevision);applyRenameReferences(data.payload);if(!window.VBFolderInteraction?.moving){render();save();}return;}if(data.type==='delete'){if(Number(data.payload.nativeRevision)<VBHost.nativeRevision)return;if(Number.isFinite(data.payload.nativeRevision))VBHost.nativeRevision=Math.max(VBHost.nativeRevision,data.payload.nativeRevision);applyNativeDelete(data.payload);return;}if(data.type==='flush'){parent.postMessage({kind:'vb-closing-layout',channel,payload:cleanLayout()},'*');try{await window.VBMedia?.flushPlayback();await window.VBInline?.flushAll();await save();await VBHost.flushLayout();}catch(error){await rpc('preserve-layout-conflict',{layout:cleanLayout()});toast('已保留未完成保存的恢复副本。');}parent.postMessage({kind:'vb-flushed',channel},'*');}});
  fit();render();
  centerBoardContents();
  let cameraTouched=false;const cameraSelect=select;select=function(id){cameraTouched=true;cameraSelect(id);};for(const type of ['pointerdown','wheel','keydown'])window.addEventListener(type,()=>{cameraTouched=true;},{capture:true,passive:true});
