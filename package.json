@@ -1,6 +1,6 @@
 {
   "name": "obsidian-visual-board",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",

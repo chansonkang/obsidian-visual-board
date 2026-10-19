@@ -14,7 +14,7 @@ by **Chanson** · Desktop · 简体中文 / English
 
 </div>
 
-![Visual Board 品牌视觉：本地知识的可视化桌面](docs/images/hero-v0.1.26.png)
+![Visual Board 品牌视觉：本地知识的可视化桌面](docs/images/hero-v0.1.27.png)
 
 <p align="center"><sub>AI 创作的产品概念视觉，用于展示设计方向；下面为实际插件界面。</sub></p>
 
@@ -34,13 +34,13 @@ Visual Board 为 Obsidian 增加一张可编排的桌面：把相关内容放在
 
 ## 看看实际界面
 
-![Visual Board 实际插件界面：玻璃文件夹、文章卡片和网格画板](docs/images/board-overview-v0.1.26.png)
+![Visual Board 实际插件界面：玻璃文件夹、文章卡片和网格画板](docs/images/board-overview-v0.1.27.png)
 
 <p align="center"><sub>实际运行界面，使用公开演示内容，不包含个人知识库资料。</sub></p>
 
 **把层级变成可以进入的空间。** Board 映射本地文件夹，进入下一层继续整理；顶部路径返回上层。文章、图片、PDF、音频和便签可以放在同一张桌面上，手动关系线和真实文章链接各自保留。
 
-![Visual Board 实际卡片编辑界面：保留 Markdown 排版并提供图标工具栏](docs/images/markdown-editor-v0.1.26.png)
+![Visual Board 实际卡片编辑界面：保留 Markdown 排版并提供图标工具栏](docs/images/markdown-editor-v0.1.27.png)
 
 <p align="center"><sub>实际编辑界面；标题、列表和表格保留排版，保存格式仍为 Markdown。</sub></p>
 
@@ -60,7 +60,7 @@ Visual Board 为 Obsidian 增加一张可编排的桌面：把相关内容放在
 
 ## 三步开始
 
-当前版本 **0.1.26**，支持 **Obsidian 1.5.0+ 桌面版**。
+当前版本 **0.1.27**，支持 **Obsidian 1.5.0+ 桌面版**。
 
 1. 从 [GitHub Releases](https://github.com/chansonkang/obsidian-visual-board/releases) 下载 `Visual-Board-v版本-Chanson.zip`，解压到知识库的 `.obsidian/plugins/`，得到 `obsidian-visual-board` 文件夹。
 2. 在 Obsidian「设置 → 第三方插件」启用 **Visual Board · 可视化桌面**。

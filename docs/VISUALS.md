@@ -1,12 +1,12 @@
 # 产品展示图
 
-当前版本：0.1.26。所有图片用于展示 Visual Board 的玻璃文件夹、纸张卡片、浅灰网格、留白与胶囊工具栏。
+当前版本：0.1.27。所有图片用于展示 Visual Board 的玻璃文件夹、纸张卡片、浅灰网格、留白与胶囊工具栏。
 
 | 文件 | 类型 | 来源 |
 | --- | --- | --- |
-| [hero-v0.1.26.png](images/hero-v0.1.26.png) | AI 品牌概念图 | 内置 imagegen 生成，参考当前真实界面和早期设计图；不是实际运行截图 |
-| [board-overview-v0.1.26.png](images/board-overview-v0.1.26.png) | 当前版本真实界面 | 实际构建的插件界面，公开演示文章、文件夹、图片、便签和播放器 |
-| [markdown-editor-v0.1.26.png](images/markdown-editor-v0.1.26.png) | 当前版本真实界面 | 嵌套 Board 与 Markdown 卡片就地编辑、标题、列表、表格和工具栏 |
+| [hero-v0.1.27.png](images/hero-v0.1.27.png) | AI 品牌概念图 | 内置 imagegen 生成，参考当前真实界面和早期设计图；不是实际运行截图 |
+| [board-overview-v0.1.27.png](images/board-overview-v0.1.27.png) | 当前版本真实界面 | 实际构建的插件界面，公开演示文章、文件夹、图片、便签和播放器 |
+| [markdown-editor-v0.1.27.png](images/markdown-editor-v0.1.27.png) | 当前版本真实界面 | 嵌套 Board 与 Markdown 卡片就地编辑、标题、列表、表格和工具栏 |
 
 截图不读取个人 Vault、文章、账号或密钥。播放器演示使用生成的静音 WAV；图片使用项目自带演示素材。截图脚本为 [capture-showcase.mjs](../scripts/capture-showcase.mjs)，可在安装 Chrome 和 playwright-core 后重现：
 
@@ -52,3 +52,16 @@ consistent with the actual current UI. The aesthetic is the main value:
 beautiful knowledge workspace, delightful clarity, sophisticated restraint.
 Production-quality polished 3D/editorial product visualization.
 ```
+
+## 0.1.27 版本标注更新
+
+仍使用内置 imagegen，仅编辑原品牌图版本号。提示词：
+
+```text
+Change only the small version badge text from "0.1.26" to "0.1.27".
+Preserve all other pixels, Chinese and English text, title, typography,
+composition, colors, glass folders, paper notes, shadows, grid, and dock.
+No other changes.
+```
+
+真实截图由同一脚本对 0.1.27 的实际构建重新拍摄；0.1.26 的图像保留为历史素材。

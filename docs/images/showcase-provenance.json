@@ -1,10 +1,10 @@
 {
-  "version": "0.1.26",
+  "version": "0.1.27",
   "source": "Actual built src/frame.html; unchanged production UI",
   "data": "Synthetic public Chinese notes, sample folders and generated silent WAV; bundled original demo photo",
   "screenshots": [
-    "board-overview-v0.1.26.png",
-    "markdown-editor-v0.1.26.png"
+    "board-overview-v0.1.27.png",
+    "markdown-editor-v0.1.27.png"
   ],
   "viewport": {
     "width": 1600,

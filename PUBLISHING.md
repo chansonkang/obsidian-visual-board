@@ -13,23 +13,27 @@
 
 ## 发布一个新版本
 
-以 `0.1.27` 为示例（请使用下一个尚未发布的版本号）：
+以 `0.1.28` 为示例（请使用下一个尚未发布的版本号）：
 
 ```sh
-node scripts/version-bump.mjs 0.1.27
+node scripts/version-bump.mjs 0.1.28
+# 在 docs/CHANGELOG.md 添加完整的「## 0.1.28 更新」段落
 npm ci
 npm run typecheck
 npm run build
 npm test
-node scripts/release-package.mjs 0.1.27
+node scripts/release-package.mjs 0.1.28
+node scripts/release-notes.mjs 0.1.28
 git add .
-git commit -m "Release 0.1.27"
+git commit -m "Release 0.1.28"
 git push origin HEAD
-git tag 0.1.27
-git push origin 0.1.27
+git tag 0.1.28
+git push origin 0.1.28
 ```
 
-标签必须是 `0.1.27`，不要写成 `v0.1.27`。版本脚本同步根目录 manifest、package、lockfile 和 `versions.json`。Release 工作流会重新安装依赖、检查、测试、构建和打包，随后发布正式 GitHub Release。不要重复覆盖已经发布的标签；修复时发布一个新的版本。
+标签必须是 `0.1.28`，不要写成 `v0.1.28`。版本脚本同步根目录 manifest、package、lockfile 和 `versions.json`。Release 工作流会重新安装依赖、检查、测试、构建和打包，随后发布正式 GitHub Release。不要重复覆盖已经发布的标签；修复时发布一个新的版本。
+
+每次发版先在 `docs/CHANGELOG.md` 添加对应版本的完整更新说明。工作流从这份已提交历史中提取**完全匹配当前版本**的段落，生成 `release/RELEASE-NOTES.md` 并作为 GitHub Release 正文；文末链接该标签下的 README 和完整更新记录。缺少、重复或空白的版本段落会中止发布，避免把旧版本说明贴到新版。生成的说明不会改写历史文件，也不作为安装附件上传。旧标签、旧记录保持不变，包括被检查阻止而未产生正式 Release 的版本。
 
 Release 附件包括供 Obsidian 使用的独立 `main.js`、`manifest.json`、`styles.css`，第三方许可证，朋友手动安装用的 `Visual-Board-v版本-Chanson.zip` 和 `SHA256SUMS.txt`。ZIP 由明确的文件清单生成，只含运行文件、第三方许可证及 README，不会打包 `data.json`、恢复草稿、布局备份或本地设置。
 
@@ -53,4 +57,4 @@ Obsidian 官方文档要求 Release tag 和 manifest 版本完全匹配，安装
 
 ## 构建工作流依据
 
-工作流使用 Node.js 24、`actions/checkout@v7.0.1` 和 `actions/setup-node@v7.1.0`，版本于 2026-10-19 按官方 Release 页面核对。[checkout Release](https://github.com/actions/checkout/releases/tag/v7.0.1)、[setup-node Release](https://github.com/actions/setup-node/releases/tag/v7.1.0)。发布权限遵循 [GitHub Token 权限说明](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token)，附件发布使用 [GitHub CLI release create](https://cli.github.com/manual/gh_release_create) 的 `--verify-tag` 与生成发布说明功能。
+工作流使用 Node.js 24、`actions/checkout@v7.0.1` 和 `actions/setup-node@v7.1.0`，版本于 2026-10-19 按官方 Release 页面核对。[checkout Release](https://github.com/actions/checkout/releases/tag/v7.0.1)、[setup-node Release](https://github.com/actions/setup-node/releases/tag/v7.1.0)。发布权限遵循 [GitHub Token 权限说明](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token)，附件发布使用 [GitHub CLI release create](https://cli.github.com/manual/gh_release_create) 的 `--verify-tag` 与 `--notes-file`，直接读取本版本的完整说明。

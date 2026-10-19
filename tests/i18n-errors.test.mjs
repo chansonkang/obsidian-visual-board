@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {runInNewContext} from 'node:vm';
 
 const source=await readFile(new URL('../src/frontend-i18n.js',import.meta.url),'utf8');
-const inventory=JSON.parse(await readFile(new URL('../evidence/native-error-i18n-inventory.json',import.meta.url),'utf8'));
+const inventory=JSON.parse(await readFile(new URL('./fixtures/native-error-i18n-inventory.json',import.meta.url),'utf8'));
 function runtime(language){
  const window={__VB_INIT:{settings:{language}},confirm:()=>true,addEventListener(){},dispatchEvent(){}};
  const document={body:{},documentElement:{},querySelectorAll:()=>[]};

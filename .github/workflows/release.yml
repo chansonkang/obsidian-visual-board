@@ -33,7 +33,17 @@ jobs:
       - run: npm test
       - name: Validate and package release
         run: node scripts/release-package.mjs "$GITHUB_REF_NAME"
+      - name: Extract this version's release notes
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME"
       - name: Publish assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --title "Visual Board $GITHUB_REF_NAME" --generate-notes --latest
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            release/main.js release/manifest.json release/styles.css \
+            release/LUCIDE-LICENSE.txt release/PDFJS-LICENSE.txt \
+            release/MARKDOWN-IT-LICENSE.txt release/TURNDOWN-LICENSE.txt \
+            release/TURNDOWN-GFM-LICENSE.txt \
+            "release/Visual-Board-v${GITHUB_REF_NAME}-Chanson.zip" release/SHA256SUMS.txt \
+            --verify-tag --title "Visual Board $GITHUB_REF_NAME" \
+            --notes-file release/RELEASE-NOTES.md --latest
