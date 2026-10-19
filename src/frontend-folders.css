@@ -1,0 +1,5 @@
+.folder-source{font-size:10px;color:#86919c;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;margin:7px auto 0}
+.board-contents{border-top:1px solid #e0e3e8;margin-top:12px;padding-top:10px}
+.board-contents h3{font-size:13px;font-weight:500;color:#7d8794;margin:5px 0 8px}
+.board-contents>button{display:block;width:100%;text-align:left;padding:8px 12px;border-radius:999px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-contents>button:hover{background:#ece8f4}.board-contents>.btn{margin-top:8px;background:#f0edf5;text-align:center}

@@ -1,0 +1,10 @@
+/* Local transparent glass material changes color independently of sticker ink. */
+.default-folder>img{filter:var(--vb-folder-tint,none)}
+.vb-folder-style{border:0;border-top:1px solid #dce3ec;padding:14px 0 0;margin:10px 0 16px;min-width:0}
+.vb-folder-style[hidden]{display:none!important}
+.vb-folder-style legend{padding:0 9px 0 0;color:#677586;font-size:13px;font-weight:550}
+.vb-folder-colors{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.vb-color-choice{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 11px;min-height:39px;border:1px solid #dbe0e8;border-radius:999px;background:#ffffff9e;font-size:12px;line-height:1.3;color:#677586}
+.vb-color-dot{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 1px #0000000a;flex-shrink:0}
+.vb-color-choice:hover{background:#fff}.vb-color-choice.selected{border-color:#9582ba;background:#f2edf9;color:#57446d;box-shadow:0 0 0 1px #9582ba33}
+.vb-folder-style small{color:#8994a2;font-size:11px;line-height:1.6}.icon-picker-grid button.selected{border-color:#9582ba;background:#ede7f5}.icon-picker-grid button{border-radius:999px}

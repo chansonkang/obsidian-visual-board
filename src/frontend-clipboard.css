@@ -1,0 +1,6 @@
+.vb-component-clipboard{display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto;gap:0;border-radius:999px!important}
+.vb-component-clipboard svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+#selection-bar .vb-component-clipboard{width:36px;min-width:36px;height:36px;padding:8px}
+.vb-component-clipboard:disabled{opacity:.45;cursor:wait}
+#nodes>.vb-markdown-drop-target{outline:3px solid #a58bc9;outline-offset:7px;border-radius:24px;filter:drop-shadow(0 0 12px #bca7dd77)}
+.vb-markdown-dropping #canvas{box-shadow:inset 0 0 0 2px #bba4d780}

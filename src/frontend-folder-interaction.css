@@ -1,0 +1,12 @@
+.vb-card-drag-handle{cursor:grab!important;touch-action:none}.vb-card-drag-handle:active{cursor:grabbing!important}
+.paper .node-actions{opacity:1}.vb-card-drag-handle svg{width:18px!important;height:18px!important}
+.folder.drop-target .folder-art{outline:2px solid #9582ba;outline-offset:4px;border-radius:28px;background:#e9e3f344}
+.vb-folder-drop-hint{position:fixed;z-index:250;pointer-events:none;max-width:220px;padding:10px 15px;border-radius:999px;background:#29262fe8;color:#fff;font-size:12px;box-shadow:0 8px 25px #20304425;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vb-folder-drop-hint[hidden]{display:none}.vb-moving-article #nodes{pointer-events:none}
+.paper.dragging{opacity:.55}.folder.drop-target{z-index:14}
+.paper .date{max-width:calc(100% - 102px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.folder.drop-target{outline-color:#9582ba}
+
+.vb-moving-article #nodes>.node,.vb-moving-article #selection-bar,.vb-moving-article #connection-controls,.vb-moving-article #multiselect-panel{pointer-events:none}
+
+.vb-moving-article .bottom-toolbar,.vb-moving-article header,.vb-moving-article #popover,.vb-moving-article #edge-style-panel{pointer-events:none}

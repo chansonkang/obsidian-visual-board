@@ -1,0 +1,50 @@
+.node.paper .vb-inline-editor { cursor: text; outline: none; user-select: text; -webkit-user-select: text; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; min-height: 0; padding: 3px 1px; flex: 1 1 0; overflow: auto; }
+.node.paper .vb-inline-editor:focus { background: transparent; box-shadow: none; }
+.node.paper .vb-inline-editor[contenteditable=false] { color: #8c929b; cursor: default; }
+.vb-inline-status { position: relative; flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding-top: 6px; font-size: 9px; color: #8b93a1; line-height: 1.5; cursor: default; }
+.vb-inline-status.vb-inline-warning { color: #855d38; }
+.vb-inline-status button { border: 1px solid #e7dece; background: #fff9ed; border-radius: 999px !important; padding: 4px 9px; font-size: 9px; cursor: pointer; color: #6f5135; }
+.vb-inline-status details { flex-basis: 100%; border-radius: 12px; background: #fff9ed; padding: 5px 7px; }
+.vb-inline-status summary { cursor: pointer; }
+.vb-inline-status pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 110px; overflow: auto; font: 10px/1.5 inherit; margin: 5px 0; user-select: text; }
+
+.vb-article-image{display:inline-block;max-width:100%;vertical-align:top;user-select:all;line-height:0;border-radius:10px;overflow:hidden}
+.vb-article-image img{display:block;max-width:100%;height:auto;object-fit:contain;border-radius:10px}
+
+.node.paper .vb-markdown-read{white-space:normal;cursor:text;color:#455364;line-height:1.65}
+.node.paper .vb-markdown-read[contenteditable=false]{color:#455364;cursor:text}
+.node.paper .vb-markdown-read[data-inline-readonly=true]{color:#8c929b;cursor:default}
+.vb-markdown-read>:first-child{margin-top:0}
+.vb-markdown-read>:last-child{margin-bottom:0}
+.vb-markdown-read p{margin:0 0 10px}
+.node.paper .vb-markdown-read h1,.node.paper .vb-markdown-read h2,.node.paper .vb-markdown-read h3,.node.paper .vb-markdown-read h4,.node.paper .vb-markdown-read h5,.node.paper .vb-markdown-read h6{color:#253140;font-weight:650;line-height:1.4;letter-spacing:0;margin:16px 0 8px}
+.node.paper .vb-markdown-read h1{font-size:21px}.node.paper .vb-markdown-read h2{font-size:18px}.node.paper .vb-markdown-read h3{font-size:16px}.node.paper .vb-markdown-read h4,.node.paper .vb-markdown-read h5,.node.paper .vb-markdown-read h6{font-size:14px}
+.vb-markdown-read strong,.vb-markdown-read b{font-weight:700;color:#253140}
+.vb-markdown-read em{font-style:italic}
+.vb-markdown-read ul,.vb-markdown-read ol{padding-left:23px;margin:8px 0 12px}
+.vb-markdown-read li{margin:4px 0}.vb-markdown-read li>p{margin:0}
+.vb-markdown-read blockquote{margin:10px 0;padding:6px 12px;border-left:3px solid #b6a7cc;background:#eee9f54d;border-radius:0 9px 9px 0;color:#726781}
+.vb-markdown-read blockquote>p:last-child{margin-bottom:0}
+.vb-markdown-read table{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0 14px}
+.vb-markdown-read th,.vb-markdown-read td{padding:7px 9px;border:1px solid #dce2e9;text-align:left;overflow-wrap:anywhere;vertical-align:top}
+.vb-markdown-read th{background:#eeeaf4;font-weight:650}.vb-markdown-read tbody tr:nth-child(even){background:#f7f8fa}
+.vb-markdown-read code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#edf0f4;border-radius:5px;padding:2px 4px}
+.vb-markdown-read pre{margin:10px 0 14px;padding:12px;background:#eef1f5;border:1px solid #e0e5eb;border-radius:10px;overflow:auto;white-space:pre;line-height:1.6}
+.vb-markdown-read pre code{padding:0;background:none;border-radius:0;font-size:11px}
+.vb-markdown-read hr{border:0;border-top:1px solid #e1e4e9;margin:16px 0}
+.vb-markdown-read a{color:#7f659e;text-decoration:underline;text-decoration-color:#b9a8cd;text-underline-offset:3px;cursor:pointer}
+.vb-markdown-read .vb-article-image{margin:6px 0}
+.vb-image-placeholder{display:inline-block;max-width:100%;padding:12px;border:1px dashed #cdd3dc;border-radius:10px;color:#87929f;background:#f2f4f7;font-size:11px;line-height:1.6;overflow-wrap:anywhere;white-space:normal}
+.node.paper .vb-markdown-edit{white-space:pre-wrap;font-family:inherit}
+
+/* Editing keeps the exact same reading layout and browser-native text selection. */
+.node.paper .vb-markdown-edit { white-space:normal; font-family:inherit; }
+.node.paper .vb-markdown-edit a { cursor:text; }
+.node.paper .vb-markdown-edit:empty::before { content:'开始写正文…';color:#a0a7b4;pointer-events:none; }
+
+/* List markers have their own gutter, including headings authored inside a list item. */
+.vb-markdown-read ul,.vb-markdown-read ol{list-style-position:outside}
+.vb-markdown-read ol{padding-left:2.8em;padding-inline-start:2.8em}
+.vb-markdown-read ul{padding-left:1.8em;padding-inline-start:1.8em}
+.node.paper .vb-markdown-read li>h1:first-child,.node.paper .vb-markdown-read li>h2:first-child,.node.paper .vb-markdown-read li>h3:first-child,.node.paper .vb-markdown-read li>h4:first-child,.node.paper .vb-markdown-read li>h5:first-child,.node.paper .vb-markdown-read li>h6:first-child{margin-top:0;margin-bottom:.35em}
+.vb-markdown-read li{min-width:0;overflow-wrap:anywhere}

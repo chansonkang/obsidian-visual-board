@@ -1,0 +1,24 @@
+{
+  "name": "obsidian-visual-board",
+  "version": "0.1.26",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts && node --test tests/*.test.mjs",
+    "configure-repository": "node scripts/configure-repository.mjs",
+    "version:prepare": "node scripts/version-bump.mjs",
+    "release:package": "node scripts/release-package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "markdown-it": "15.0.2",
+    "obsidian": "latest",
+    "pdfjs-dist": "6.4.299",
+    "tsx": "^4.0.0",
+    "turndown": "7.2.1",
+    "turndown-plugin-gfm": "1.0.2",
+    "typescript": "^5.0.0"
+  }
+}

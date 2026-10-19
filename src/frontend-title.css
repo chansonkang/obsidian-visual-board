@@ -1,0 +1,5 @@
+.node.paper .vb-inline-title{cursor:text;outline:none;user-select:text;-webkit-user-select:text;min-width:1em;overflow-wrap:anywhere}
+.node.paper .vb-inline-title:focus{box-shadow:0 0 0 3px #9e8abc24;border-radius:4px}
+.node.paper .vb-inline-title[contenteditable=false]{cursor:default}
+.vb-title-status{flex:0 0 auto;font-size:9px;line-height:1.5;color:#855d38;white-space:normal;margin:-7px 0 8px;overflow-wrap:anywhere}
+.vb-title-status[hidden]{display:none}
